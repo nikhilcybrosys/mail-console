@@ -1,7 +1,10 @@
 """Aggregations for the dashboard. All read from our DB; reputation 'estimates' are labelled as such."""
+import re
 from datetime import timedelta
 
-from django.db.models import Count, Max, Q
+from django.conf import settings
+from django.db.models import Count, Max, Q, Value
+from django.db.models.functions import StrIndex, Substr
 from django.utils import timezone
 
 from .events import SUPPRESSION_SUBTYPES
@@ -176,3 +179,62 @@ def spark_points(values, width=84, height=26):
     hi = max(values) or 1
     step = width / (len(values) - 1)
     return " ".join(f"{i * step:.1f},{height - 2 - (v / hi) * (height - 4):.1f}" for i, v in enumerate(values))
+
+
+# ---------------------------------------------------------------- by recipient provider
+# Big mailbox providers judge your mail on their own terms, so a problem often shows up at one of them first.
+# Only the consumer domains are named; a company on Google Workspace or Microsoft 365 has its own domain and lands in
+# "Other domains" (finding out who hosts a domain needs a DNS lookup per domain, which a dashboard should not do).
+PROVIDERS = (
+    ("Gmail", re.compile(r"^(gmail|googlemail)\.com$")),
+    ("Microsoft", re.compile(r"^(outlook|hotmail|live|msn)\.[a-z.]+$")),
+    ("Yahoo and AOL", re.compile(r"^((yahoo|ymail|rocketmail)\.[a-z.]+|aol\.com)$")),
+    ("Apple", re.compile(r"^(icloud|me|mac)\.com$")),
+    ("Proton", re.compile(r"^(proton\.me|protonmail\.com|pm\.me)$")),
+)
+OTHER_PROVIDER = "Other domains"
+TONE_MIN_SAMPLE = 20  # a rate from fewer mails than this is shown but never coloured: 1 bounce in 3 is not a trend
+
+
+def provider_of(domain):
+    d = (domain or "").lower()
+    return next((name for name, rx in PROVIDERS if rx.match(d)), OTHER_PROVIDER)
+
+
+def _row(name, n, delivered, bounced, complained):
+    th = settings.ALERT_THRESHOLDS
+
+    def tone(rate, warn, page):
+        return "" if n < TONE_MIN_SAMPLE else "err" if rate >= page else "warn" if rate >= warn else ""
+    br, cr = (bounced / n if n else 0.0), (complained / n if n else 0.0)
+    return {"name": name, "sent": n, "delivered": delivered, "bounced": bounced, "complained": complained,
+            "delivered_rate": delivered / n if n else 0.0, "bounce_rate": br, "complaint_rate": cr,
+            "bounce_tone": tone(br, th["bounce_warn"], th["bounce_page"]), "complaint_tone": tone(cr, th["complaint_warn"], th["complaint_page"])}
+
+
+def by_provider(hours=24, now=None, scope_domains=None, top=5):
+    """Recipients grouped by provider, plus the recipient domains with the most problems.
+
+    Counts recipients (one mail to two people is two), by their latest state, for mail sent in the window. A user scoped
+    to some From-domains only sees mail from those domains, as on the message list.
+    """
+    now = now or timezone.now()
+    qs = MessageRecipient.objects.filter(message__sent_at__gte=now - timedelta(hours=hours))
+    if scope_domains:
+        qs = qs.filter(message__from_domain__in=[d.lower() for d in scope_domains])
+    domain = Substr("address_lower", StrIndex("address_lower", Value("@")) + 1)
+    rows = qs.annotate(domain=domain).values("domain").annotate(
+        n=Count("id"), delivered=Count("id", filter=Q(state="delivery")),
+        bounced=Count("id", filter=Q(state="bounce")), complained=Count("id", filter=Q(state="complaint")))
+    totals, domains = {}, []
+    for r in rows:
+        name = provider_of(r["domain"])
+        t = totals.setdefault(name, [0, 0, 0, 0])
+        for i, k in enumerate(("n", "delivered", "bounced", "complained")):
+            t[i] += r[k]
+        if r["bounced"] or r["complained"]:
+            domains.append({**_row(r["domain"], r["n"], r["delivered"], r["bounced"], r["complained"]), "provider": name})
+    order = [name for name, _ in PROVIDERS] + [OTHER_PROVIDER]
+    providers = sorted((_row(name, *t) for name, t in totals.items()), key=lambda x: (-x["sent"], order.index(x["name"])))
+    domains.sort(key=lambda d: (-(d["bounced"] + d["complained"]), -d["sent"], d["name"]))
+    return {"providers": providers, "domains": domains[:top]}
