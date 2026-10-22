@@ -238,3 +238,28 @@ def by_provider(hours=24, now=None, scope_domains=None, top=5):
     providers = sorted((_row(name, *t) for name, t in totals.items()), key=lambda x: (-x["sent"], order.index(x["name"])))
     domains.sort(key=lambda d: (-(d["bounced"] + d["complained"]), -d["sent"], d["name"]))
     return {"providers": providers, "domains": domains[:top]}
+
+
+# ---------------------------------------------------------------- spend estimate
+def cost_by_app(since, now=None, scope_domains=None, top=8):
+    """An ESTIMATE of SES message charges from `since`: every recipient is one billable email at SES_PRICE_PER_1000.
+
+    Not included, because the console cannot know them: data charges for attachments, any free tier, Virtual Deliverability
+    Manager, dedicated IPs, and mail sent outside the console's view. Returns the total and the busiest apps.
+    """
+    now = now or timezone.now()
+    qs = MessageRecipient.objects.filter(message__sent_at__gte=since, message__sent_at__lte=now)
+    if scope_domains:
+        qs = qs.filter(message__from_domain__in=[d.lower() for d in scope_domains])
+    rows = qs.values("message__source_app").annotate(n=Count("id")).order_by("-n")
+    price = settings.SES_PRICE_PER_1000 / 1000
+    apps, total = [], 0
+    for r in rows:
+        apps.append({"app": r["message__source_app"] or "(untagged)", "recipients": r["n"], "cost": r["n"] * price})
+        total += r["n"]
+    return {"recipients": total, "cost": total * price, "apps": apps[:top], "more": max(len(apps) - top, 0)}
+
+
+def month_start(now=None):
+    now = now or timezone.now()
+    return now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)

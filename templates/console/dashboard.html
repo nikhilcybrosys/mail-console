@@ -101,5 +101,19 @@
     {% else %}{% include "components/_empty.html" with icon="circle-check" title=_("No problem domains") text=_("Recipient domains with bounces or complaints will be listed here.") %}{% endif %}
   </section>
 </div>
+<br>
+<section class="card" aria-labelledby="spend-h">
+  <div class="card-head"><div class="card-title" id="spend-h">{% trans "Estimated SES cost" %}</div><span class="badge badge-info">{% trans "estimate" %}</span></div>
+  <div class="card-body stack">
+    <dl class="kv kv-narrow">
+      <dt>{% trans "This month so far" %}</dt><dd><b>{{ spend.month.cost|usd }}</b> <span class="muted">· {{ spend.month.recipients }} {% trans "emails" %}</span></dd>
+      <dt>{% trans "Selected period" %}</dt><dd><b>{{ spend.window.cost|usd }}</b> <span class="muted">· {{ spend.window.recipients }} {% trans "emails" %}</span></dd>
+    </dl>
+    {% if spend.window.apps %}<table class="table"><thead><tr><th>{% trans "App" %}</th><th class="col-num">{% trans "Emails" %}</th><th class="col-num">{% trans "Estimated cost" %}</th></tr></thead><tbody>
+      {% for a in spend.window.apps %}<tr><td class="cell-primary">{{ a.app }}</td><td class="col-num num">{{ a.recipients }}</td><td class="col-num num">{{ a.cost|usd }}</td></tr>{% endfor %}
+      {% if spend.window.more %}<tr><td class="muted" colspan="3">{% blocktrans with n=spend.window.more %}and {{ n }} more apps{% endblocktrans %}</td></tr>{% endif %}</tbody></table>{% endif %}
+    <p class="muted">{% blocktrans with p=spend.price %}Each recipient counts as one email at ${{ p }} per 1,000. The console cannot see attachment data charges, any free tier, Virtual Deliverability Manager or dedicated IPs, so treat this as a floor, not your bill. Change the price with MC_SES_PRICE_PER_1000.{% endblocktrans %}</p>
+  </div>
+</section>
 {% endblock %}
 {% block page_js %}<script src="{% static 'vendor/uplot/uPlot.iife.min.js' %}" defer></script><script src="{% static 'js/charts.js' %}" defer></script>{% endblock %}
