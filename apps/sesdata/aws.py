@@ -205,10 +205,11 @@ def assume_writer(region, tier, acting_email, request_id):
     role_arn = getattr(settings, TIERS[tier])
     if not role_arn:
         raise RuntimeError(f"No write role configured for tier {tier!r}")
-    resp = boto3.client("sts").assume_role(
-        RoleArn=role_arn, RoleSessionName=f"mc-{request_id}"[:64], SourceIdentity=acting_email,
-        DurationSeconds=settings.AWS_ASSUME_SESSION_SECONDS,
-    )
+    kwargs = dict(RoleArn=role_arn, RoleSessionName=f"mc-{request_id}"[:64], SourceIdentity=acting_email,
+                  DurationSeconds=settings.AWS_ASSUME_SESSION_SECONDS)
+    if settings.AWS_WRITE_ROLE_EXTERNAL_ID:
+        kwargs["ExternalId"] = settings.AWS_WRITE_ROLE_EXTERNAL_ID
+    resp = boto3.client("sts").assume_role(**kwargs)
     c = resp["Credentials"]
     client = boto3.client(
         "sesv2", region_name=region, aws_access_key_id=c["AccessKeyId"],

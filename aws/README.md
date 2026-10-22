@@ -31,6 +31,10 @@ than it looks:
   remove the event destination) without an approval. They still cannot send mail, but they can stop yours.
 - The console also shows recipient addresses and subjects, and renders untrusted email. Keep it away from servers that hold
   billing, customer or production data, and away from public demo machines.
+- The write roles also require a **shared secret** (`MC_AWS_WRITE_ROLE_EXTERNAL_ID`) that only the console knows, which blocks the
+  easiest abuse on a shared server. Keep the secret in a file readable only by the console's own user, and run the console as its
+  own unprivileged user. It is not a substitute for a dedicated host: anything running as root, or able to read the console's
+  environment, still wins.
 - An EC2 instance can have only **one** instance profile, so putting the console on an existing server would mean merging its
   permissions into that server's role.
 
@@ -77,7 +81,8 @@ python3 aws/render.py --account-id "$ACCOUNT_ID" --region "$AWS_REGION" --email-
   --topic-arn "$TOPIC_ARN" --queue-arn "$QUEUE_ARN" --service-principal ec2.amazonaws.com
 ```
 
-This writes ready-to-use files to `./aws-rendered/` (git-ignored; they contain your account id) and refuses to continue if
+It also **prints a secret** (`MC_AWS_WRITE_ROLE_EXTERNAL_ID`): the write roles only accept a caller that presents it, so other programs that share the
+server cannot use the instance credentials to change SES settings. Put it in the console's environment file and nowhere else. This writes ready-to-use files to `./aws-rendered/` (git-ignored; they contain your account id) and refuses to continue if
 anything is invalid or left unfilled. Use `--service-principal ecs-tasks.amazonaws.com` if the console runs on ECS.
 Edit `aws/policies/*.json` first if you need a second region: the region condition is a single value.
 
@@ -172,6 +177,7 @@ environment variables:
 | `AWS_DEFAULT_REGION`, `MC_AWS_REGIONS` | your SES region |
 | `MC_SQS_EVENTS_QUEUE_URL` | `$QUEUE_URL` |
 | `MC_EXPECTED_SNS_TOPIC_ARNS` | `$TOPIC_ARN` (the worker rejects messages from any other topic) |
+| `MC_AWS_WRITE_ROLE_EXTERNAL_ID` | the secret printed by `aws/render.py` in step 2 (required: the write roles refuse a caller that does not present it) |
 | `MC_AWS_WRITE_ROLE_OPS_ARN`, `MC_AWS_WRITE_ROLE_SECURITY_ARN` | `arn:aws:iam::<account>:role/mail-console-write-ops` and `...-security` |
 | `MC_ALERT_SLACK_WEBHOOK_URL` | optional |
 
