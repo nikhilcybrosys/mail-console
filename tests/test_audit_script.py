@@ -102,8 +102,25 @@ class FakeIam:
                       "m2": {"Users": [{"UserName": "mail-smtp-user", "CreateDate": _dt.datetime(2026, 2, 2)}, {"UserName": "bob", "CreateDate": _dt.datetime(2026, 3, 3)}],
                              "IsTruncated": False}}
 
+    GROUPS = {"carol": ["mailers"], "dave": ["staff"]}
+
     def list_users(self, Marker=None):
+        if Marker == "m2":  # carol and dave have unremarkable names; only their group tells the story
+            return {"Users": self.pages["m2"]["Users"] + [{"UserName": "carol", "CreateDate": _dt.datetime(2026, 4, 4)}, {"UserName": "dave", "CreateDate": _dt.datetime(2026, 4, 4)}],
+                    "IsTruncated": False}
         return self.pages[Marker]
+
+    def list_groups_for_user(self, UserName):
+        return {"Groups": [{"GroupName": g} for g in self.GROUPS.get(UserName, [])]}
+
+    def list_attached_group_policies(self, GroupName):
+        return {"AttachedPolicies": []}
+
+    def list_group_policies(self, GroupName):
+        return {"PolicyNames": ["send"] if GroupName == "mailers" else []}
+
+    def get_group_policy(self, GroupName, PolicyName):
+        return {"PolicyDocument": {"Statement": [{"Effect": "Allow", "Action": "ses:SendRawEmail", "Resource": "*"}]}}
 
     def list_attached_user_policies(self, UserName):
         return {"AttachedPolicies": []}
@@ -125,7 +142,7 @@ class FakeIam:
 
 def test_iam_audit_flags_real_ses_users_and_not_names_that_merely_contain_ses():
     found = {u["user"]: u for u in audit.audit_iam(FakeIam())}
-    assert set(found) == {"mail-smtp-user", "bob"}, "James must not match 'ses'; users on the second page must be found"
+    assert set(found) == {"mail-smtp-user", "bob", "carol"}, "James must not match 'ses'; second-page users must be found; dave (group without SES) must not be flagged"
     assert any("SES permissions" in w for w in found["bob"]["why"])  # found by reading the inline policy, not by its name
     assert found["mail-smtp-user"]["keys"][0]["last_used"] is None and found["mail-smtp-user"]["keys"][0]["status"] == "Active"
 
@@ -133,3 +150,10 @@ def test_iam_audit_flags_real_ses_users_and_not_names_that_merely_contain_ses():
 def test_report_never_contains_a_full_access_key_id():
     text = _json.dumps(audit.audit_iam(FakeIam()), default=str)
     assert FakeIam.KEY not in text and "...1234" not in text and '"id_suffix": "1234"' in text
+
+
+def test_permissions_inherited_through_a_group_are_reported():
+    """A user with an ordinary name and no policies of its own can still send mail through a group (as real SMTP users do)."""
+    found = {u["user"]: u for u in audit.audit_iam(FakeIam())}
+    assert any("member of group 'mailers'" in w and "SES permissions" in w for w in found["carol"]["why"])
+    assert "dave" not in found
