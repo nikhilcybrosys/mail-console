@@ -1,0 +1,40 @@
+{% extends "base.html" %}{% load i18n ui %}
+{% block title %}{% trans "Setup check" %}{% endblock %}
+{% block crumbs %}<span aria-current="page">{% trans "Setup check" %}</span>{% endblock %}
+{% block content %}
+<div class="ph"><div><h1>{% trans "Setup check" %}</h1><p>{% trans "Is the console wired up end to end? Each line says what is fine, and what to do about anything that is not." %}</p></div>
+  <a class="btn" href="{% url 'setup_check' %}">{% icon "refresh-cw" %}<span>{% trans "Run again" %}</span></a></div>
+<div class="stack">
+  {% if summary == "fail" %}
+  <div class="callout callout-err" role="status">{% icon "circle-alert" %}<div><div class="callout-title">{% trans "Something needs fixing" %}</div><p>{% blocktrans %}{{ n_fail }} to fix, {{ n_warn }} to look at, {{ n_ok }} fine.{% endblocktrans %}</p></div></div>
+  {% elif summary == "warn" %}
+  <div class="callout callout-warn" role="status">{% icon "triangle-alert" %}<div><div class="callout-title">{% trans "Working, with things to look at" %}</div><p>{% blocktrans %}{{ n_warn }} to look at, {{ n_ok }} fine.{% endblocktrans %}</p></div></div>
+  {% else %}
+  <div class="callout callout-info" role="status">{% icon "circle-check" %}<div><div class="callout-title">{% trans "All set" %}</div><p>{% blocktrans %}{{ n_ok }} checks passed.{% endblocktrans %}</p></div></div>
+  {% endif %}
+
+  {% if test_results %}
+  <section class="card" aria-labelledby="tr-h"><div class="card-head"><div class="card-title" id="tr-h">{% trans "Write role test" %}</div></div>
+    <ul class="list">{% for c in test_results %}
+      <li class="list-top">{% include "console/_setup_badge.html" with status=c.status %}<span class="spacer"><span class="cell-primary">{{ c.title }}</span>{% if c.detail %}<div class="cell-secondary">{{ c.detail }}</div>{% endif %}{% if c.fix %}<div class="cell-secondary">{{ c.fix }}</div>{% endif %}</span></li>
+    {% endfor %}</ul></section>
+  {% endif %}
+
+  {% for g in groups %}
+  <section class="card" aria-labelledby="g{{ forloop.counter }}-h">
+    <div class="card-head"><div class="card-title" id="g{{ forloop.counter }}-h">{{ g.name }}</div>{% include "console/_setup_badge.html" with status=g.status %}</div>
+    <ul class="list">{% for c in g.checks %}
+      <li class="list-top">{% include "console/_setup_badge.html" with status=c.status %}<span class="spacer"><span class="cell-primary">{{ c.title }}</span>{% if c.detail %}<div class="cell-secondary">{{ c.detail }}</div>{% endif %}{% if c.fix %}<div class="cell-secondary"><strong>{% trans "What to do:" %}</strong> {{ c.fix }}</div>{% endif %}</span></li>
+    {% endfor %}</ul>
+  </section>
+  {% endfor %}
+
+  {% if can_test_roles %}
+  <section class="card" aria-labelledby="wr-h"><div class="card-head"><div class="card-title" id="wr-h">{% trans "Prove the write roles work" %}</div></div>
+    <form class="card-body stack" method="post" action="{% url 'setup_test_write_roles' %}">{% csrf_token %}
+      <p class="muted">{% trans "Assumes each write role once, as you, and throws the credentials away. Nothing in SES changes. It needs your passkey and is recorded in the audit log and in AWS CloudTrail." %}</p>
+      <div><button class="btn" type="submit">{% icon "key-round" %}<span>{% trans "Test write roles" %}</span></button></div>
+    </form></section>
+  {% endif %}
+</div>
+{% endblock %}

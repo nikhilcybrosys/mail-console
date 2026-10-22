@@ -21,7 +21,7 @@ from apps.audit.models import AuditLog
 from apps.audit.service import record, verify_chain
 from apps.core.rbac import ROLES, has_capability, require_capability
 from apps.core.templatetags.ui import STATES
-from apps.sesdata import metrics, sync
+from apps.sesdata import metrics, setupcheck, sync
 from apps.sesdata.events import SUPPRESSION_SUBTYPES  # noqa: F401  (re-exported for templates/tests)
 from apps.sesdata.explain import explain
 from apps.sesdata.models import (AccountSnapshot, Alert, BodyAccessLog, ConfigSetSnapshot, DnsCheckResult, IdentitySnapshot,
@@ -404,6 +404,31 @@ def audit_view(request):
         ok, bad = verify_chain()
         ok = {"ok": ok, "bad_id": bad}
     return render(request, "console/audit.html", {"page": _page(request, qs), "filters": request.GET, "chain": ok})
+
+
+def _setup_context(request, test_results=None):
+    checks = setupcheck.run_checks(_region(request), user=request.user)
+    return {
+        "groups": setupcheck.grouped(checks), "summary": setupcheck.worst(checks),
+        "n_fail": sum(c.status == setupcheck.FAIL for c in checks), "n_warn": sum(c.status == setupcheck.WARN for c in checks),
+        "n_ok": sum(c.status in (setupcheck.OK, setupcheck.INFO) for c in checks),
+        "can_test_roles": has_capability(request.user, "identity_write")
+                          and bool(settings.AWS_WRITE_ROLE_OPS_ARN or settings.AWS_WRITE_ROLE_SECURITY_ARN),
+        "test_results": test_results}
+
+
+@require_capability("view_setup")
+def setup_check(request):
+    return render(request, "console/setup.html", _setup_context(request))
+
+
+@require_POST
+@require_capability("identity_write", step_up=True)
+def setup_test_write_roles(request):
+    """Assume each write role once, as the requesting person, and report. Changes nothing in AWS; audited."""
+    results = setupcheck.try_write_roles(_region(request), request.user.email, f"setup-{request.user.pk}-{int(timezone.now().timestamp())}")
+    record("setup.test_write_roles", request=request, details={"region": _region(request), "results": {c.key: c.status for c in results}})
+    return render(request, "console/setup.html", _setup_context(request, results))
 
 
 @require_capability("manage_users")
