@@ -72,10 +72,14 @@ def edit(request, pk=None):
             messages.error(request, f"You can keep {service.MAX_DRAFTS_PER_USER} drafts. Delete some first.")
             return redirect("compose")
         p = request.POST
-        draft.from_address = (p.get("from_address") or "").strip().lower()[:254]
-        draft.to_text, draft.cc_text, draft.bcc_text = (p.get(k, "")[:TEXT_CAP] for k in ("to", "cc", "bcc"))
-        draft.subject = p.get("subject", "")[:500]
-        draft.body = p.get("body", "")[:service.settings.SEND_MAX_BODY * 2]
+
+        def field(name, cap):
+            return p.get(name, "").replace("\x00", "")[:cap]  # PostgreSQL text cannot hold NUL; it is never valid in mail anyway
+
+        draft.from_address = field("from_address", 254).strip().lower()
+        draft.to_text, draft.cc_text, draft.bcc_text = (field(k, TEXT_CAP) for k in ("to", "cc", "bcc"))
+        draft.subject = field("subject", 500)
+        draft.body = field("body", settings.SEND_MAX_BODY * 2)
         draft.save()
         if p.get("action") == "preview":
             prepared = service.prepare(draft, _region(request))

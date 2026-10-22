@@ -13,7 +13,7 @@ import json
 import re
 from dataclasses import dataclass, field
 from datetime import timedelta
-from email.utils import formataddr, parseaddr
+from email.utils import formataddr
 
 from botocore.exceptions import ClientError
 from django.conf import settings
@@ -80,16 +80,25 @@ def usable_senders():
 
 
 # ---------------------------------------------------------------- parsing and checking
+_ANGLE = re.compile(r"^[^<>]{0,80}<([^<>\s]+)>$")
+
+
 def parse_addresses(text):
-    """-> (addresses, bad_entries). Accepts `a@b.com` or `Name <a@b.com>`, separated by commas, semicolons or new lines."""
+    """-> (addresses, bad_entries). Strict: each entry is `a@b.com` or `Name <a@b.com>`, separated by commas, semicolons or
+    new lines. Anything else is rejected, never guessed at: a lenient parser would turn a pasted line such as
+    `Bcc: someone@x.com` into a real recipient the person never clearly chose."""
     found, bad, seen = [], [], set()
     for raw in _SPLIT.split(text or ""):
+        if _CONTROL.search(raw):  # checked before trimming, so a trailing CR cannot hide
+            bad.append(raw.strip()[:60] or "(control characters)")
+            continue
         raw = raw.strip()
         if not raw:
             continue
-        addr = parseaddr(raw)[1].strip()
+        m = _ANGLE.match(raw)
+        addr = m.group(1) if m else raw
         try:
-            if not addr or _CONTROL.search(raw) or not addr.isascii() or addr.count("@") != 1 or len(addr) > 254:
+            if (not m and re.search(r"\s", raw)) or not addr.isascii() or addr.count("@") != 1 or len(addr) > 254:
                 raise ValidationError("bad")
             validate_email(addr)
         except ValidationError:
@@ -255,7 +264,7 @@ def send(user, draft_id, expected_hash, region, request=None):
     except Exception as exc:  # noqa: BLE001
         Draft.objects.filter(pk=d.pk).update(state=Draft.DRAFT)
         code = exc.response["Error"]["Code"] if isinstance(exc, ClientError) else exc.__class__.__name__
-        record("compose.send_failed", request=request, details={**detail, "stage": "assume-role", "error": code})
+        record("compose.send_failed", actor=user.email, request=request, details={**detail, "stage": "assume-role", "error": code})
         raise SendError(_friendly(code) if isinstance(exc, ClientError) else "Could not reach AWS to prepare the send. Nothing was sent.") from None
     try:
         message_id = sender.send(from_address=p.from_header, to=p.to, cc=p.cc, bcc=p.bcc, reply_to=p.reply_to or None, subject=p.subject,
@@ -263,15 +272,15 @@ def send(user, draft_id, expected_hash, region, request=None):
     except ClientError as exc:  # AWS answered, and the answer is no
         code = exc.response["Error"]["Code"]
         Draft.objects.filter(pk=d.pk).update(state=Draft.DRAFT)
-        record("compose.send_failed", request=request, details={**detail, "stage": "send", "error": code})
+        record("compose.send_failed", actor=user.email, request=request, details={**detail, "stage": "send", "error": code})
         raise SendError(_friendly(code)) from None
     except Exception as exc:  # noqa: BLE001: timeout or dropped connection: the mail may or may not have gone out
         Draft.objects.filter(pk=d.pk).update(state=Draft.UNKNOWN)
-        record("compose.send_unknown", request=request, details={**detail, "error": exc.__class__.__name__})
+        record("compose.send_unknown", actor=user.email, request=request, details={**detail, "error": exc.__class__.__name__})
         raise SendError("AWS did not answer clearly, so the message MAY have been sent. Check Sent mail before trying again.") from None
 
     sent = SentMail.objects.create(user_email=user.email, from_address=p.from_address, to_addrs=p.to, cc_addrs=p.cc, bcc_addrs=p.bcc, subject=p.subject,
                                    recipient_count=len(p.recipients), ses_message_id=message_id)
     Draft.objects.filter(pk=d.pk).delete()
-    record("compose.sent", request=request, target=message_id, details={**detail, "message_id": message_id})
+    record("compose.sent", actor=user.email, request=request, target=message_id, details={**detail, "message_id": message_id})
     return sent
