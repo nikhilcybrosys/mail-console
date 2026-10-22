@@ -37,3 +37,6 @@
 [data-autofocus]:focus{outline:none}
 .id-chip{border:0;cursor:pointer}.id-chip:hover{background:var(--border)}
 .tl-item .callout{margin-top:8px}
+
+/* Setup check: a fixed state column so titles line up whatever the badge says */
+.setup-state{flex:0 0 76px}.setup-state .badge{min-width:72px;justify-content:center}

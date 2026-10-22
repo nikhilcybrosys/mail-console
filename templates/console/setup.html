@@ -16,7 +16,7 @@
   {% if test_results %}
   <section class="card" aria-labelledby="tr-h"><div class="card-head"><div class="card-title" id="tr-h">{% trans "Write role test" %}</div></div>
     <ul class="list">{% for c in test_results %}
-      <li class="list-top">{% include "console/_setup_badge.html" with status=c.status %}<span class="spacer"><span class="cell-primary">{{ c.title }}</span>{% if c.detail %}<div class="cell-secondary">{{ c.detail }}</div>{% endif %}{% if c.fix %}<div class="cell-secondary">{{ c.fix }}</div>{% endif %}</span></li>
+      <li class="list-top"><span class="setup-state">{% include "console/_setup_badge.html" with status=c.status %}</span><span class="spacer"><span class="cell-primary">{{ c.title }}</span>{% if c.detail %}<div class="cell-secondary">{{ c.detail }}</div>{% endif %}{% if c.fix %}<div class="cell-secondary">{{ c.fix }}</div>{% endif %}</span></li>
     {% endfor %}</ul></section>
   {% endif %}
 
@@ -24,7 +24,7 @@
   <section class="card" aria-labelledby="g{{ forloop.counter }}-h">
     <div class="card-head"><div class="card-title" id="g{{ forloop.counter }}-h">{{ g.name }}</div>{% include "console/_setup_badge.html" with status=g.status %}</div>
     <ul class="list">{% for c in g.checks %}
-      <li class="list-top">{% include "console/_setup_badge.html" with status=c.status %}<span class="spacer"><span class="cell-primary">{{ c.title }}</span>{% if c.detail %}<div class="cell-secondary">{{ c.detail }}</div>{% endif %}{% if c.fix %}<div class="cell-secondary"><strong>{% trans "What to do:" %}</strong> {{ c.fix }}</div>{% endif %}</span></li>
+      <li class="list-top"><span class="setup-state">{% include "console/_setup_badge.html" with status=c.status %}</span><span class="spacer"><span class="cell-primary">{{ c.title }}</span>{% if c.detail %}<div class="cell-secondary">{{ c.detail }}</div>{% endif %}{% if c.fix %}<div class="cell-secondary"><strong>{% trans "What to do:" %}</strong> {{ c.fix }}</div>{% endif %}</span></li>
     {% endfor %}</ul>
   </section>
   {% endfor %}

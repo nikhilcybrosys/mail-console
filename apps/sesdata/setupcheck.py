@@ -41,6 +41,11 @@ def _latest(model, region, key):
     return list(seen.values())
 
 
+def _minutes(td):
+    m = max(int(td.total_seconds() // 60), 0)
+    return "less than a minute" if m < 1 else f"{m} minute{'s' if m != 1 else ''}"
+
+
 def _short(exc):
     """An AWS error without anything sensitive: the error code, or the exception class."""
     code = getattr(exc, "response", {}).get("Error", {}).get("Code") if hasattr(exc, "response") else None
@@ -60,10 +65,10 @@ def _ses_checks(region, now, user):
         return out, []
     age = now - snap.taken_at
     if age > SYNC_STALE:
-        out.append(Check(g, "sync", "State sync is behind", WARN, f"Last sync {int(age.total_seconds() // 60)} minutes ago; it should run every 5.",
+        out.append(Check(g, "sync", "State sync is behind", WARN, f"Last sync {_minutes(age)} ago; it should run every 5 minutes.",
                          "Check that the sync process is running and look at its log for errors."))
     else:
-        out.append(Check(g, "sync", "State sync is running", OK, f"Last sync {max(int(age.total_seconds() // 60), 0)} minutes ago."))
+        out.append(Check(g, "sync", "State sync is running", OK, f"Last sync {_minutes(age)} ago."))
 
     if snap.production_access:
         out.append(Check(g, "prod", "Production access", OK, "The account can send to any address."))
