@@ -8,7 +8,7 @@ from django.conf import settings
 from django.contrib import messages
 from django.core.paginator import Paginator
 from django.db.models import Count, Q
-from django.http import Http404, HttpResponseBadRequest
+from django.http import Http404, HttpResponseBadRequest, QueryDict
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -16,7 +16,7 @@ from django.utils.cache import patch_vary_headers
 from urllib.parse import urlencode
 from django.views.decorators.http import require_POST
 
-from apps.accounts.models import User
+from apps.accounts.models import SavedView, User
 from apps.approvals import service as approvals
 from apps.approvals.models import ApprovalRequest
 from apps.audit.models import AuditLog
@@ -29,6 +29,8 @@ from apps.sesdata.events import SUPPRESSION_SUBTYPES  # noqa: F401  (re-exported
 from apps.sesdata.explain import explain
 from apps.sesdata.models import (AccountSnapshot, Alert, BodyAccessLog, ConfigSetSnapshot, DnsCheckResult, IdentitySnapshot,
                                  MailCategory, Message, MessageRecipient, SuppressionChange, SuppressionEntry)
+
+from . import exports
 
 _MSG_ID = re.compile(r"^[0-9a-zA-Z-]{12,}$")
 PAGE = 50
@@ -229,8 +231,78 @@ def messages_list(request):
     ctx = {"page": page, "tabs": tabs, "chips": chips, "q": request.GET.get("q", ""), "filters": request.GET, "total": qs.count() if page.paginator.num_pages > 1 else page.paginator.count,
            "apps": Message.objects.values_list("source_app", flat=True).distinct().order_by("source_app"),
            "open_id": request.GET.get("open", "")}
+    view_params = exports.canonical_params(request.GET)
+    ctx["view_params"] = view_params
+    ctx["saved_views"] = [{"pk": v.pk, "name": v.name, "url": f"{reverse('messages')}?{v.params}" if v.params else reverse("messages")}
+                          for v in request.user.saved_views.all()]
+    ctx["export_url"] = f"{reverse('messages_export')}?{view_params}" if has_capability(request.user, "export_data") else ""
     resp = render(request, "console/_messages_results.html" if _is_fragment(request) else "console/messages.html", ctx)
     return _vary(resp)
+
+
+def _too_many(request, n, back):
+    messages.error(request, f"That is {n:,} rows; an export holds at most {settings.EXPORT_MAX_ROWS:,}. Narrow the filters and try again.")
+    return redirect(back)
+
+
+@require_capability("export_data", step_up=True)
+def messages_export(request):
+    """The current sent-mail filters as a CSV, one row per recipient. Scoped like the list itself; audited."""
+    qs = _filtered_messages(request)
+    params = exports.canonical_params(request.GET)
+    n = qs.count()
+    if n > settings.EXPORT_MAX_ROWS:
+        return _too_many(request, n, f"{reverse('messages')}?{params}")
+    record("export.messages", request=request, details={"messages": n, "filters": dict(QueryDict(params).items())})
+    return exports.csv_response("sent-mail", exports.MESSAGE_HEADER, exports.message_rows(qs.order_by("-sent_at", "-id")))
+
+
+@require_capability("export_data", step_up=True)
+def suppression_export(request):
+    q = (request.GET.get("q") or "").strip()
+    qs = SuppressionEntry.objects.filter(region=_region(request))
+    if q:
+        qs = qs.filter(address_lower__startswith=q.lower())
+    n = qs.count()
+    if n > settings.EXPORT_MAX_ROWS:
+        return _too_many(request, n, reverse("suppression"))
+    record("export.suppression", request=request, details={"addresses": n, "q": q[:120]})
+    return exports.csv_response("suppression-list", exports.SUPPRESSION_HEADER, exports.suppression_rows(qs.order_by("address_lower")))
+
+
+@require_POST
+@require_capability("view_metadata")
+def saved_view_save(request):
+    """Remember the current sent-mail filters under a name, for this person only. Saving an existing name updates it."""
+    name = (request.POST.get("name") or "").strip()[:80]
+    params = exports.canonical_params(QueryDict(request.POST.get("params", "")))
+    back = f"{reverse('messages')}?{params}" if params else reverse("messages")
+    if not name:
+        messages.error(request, "Give the view a name.")
+    elif not params:
+        messages.error(request, "Set at least one filter first: there is nothing to save.")
+    else:
+        mine = request.user.saved_views
+        existing = mine.filter(name=name).first()
+        if existing:
+            existing.params = params
+            existing.save(update_fields=["params"])
+            messages.success(request, f"Updated the view “{name}”.")
+        elif mine.count() >= exports.MAX_VIEWS_PER_USER:
+            messages.error(request, f"You can keep {exports.MAX_VIEWS_PER_USER} saved views. Delete one first.")
+        else:
+            SavedView.objects.create(user=request.user, name=name, params=params)
+            messages.success(request, f"Saved the view “{name}”.")
+    return redirect(back)
+
+
+@require_POST
+@require_capability("view_metadata")
+def saved_view_delete(request, pk):
+    view = get_object_or_404(request.user.saved_views, pk=pk)  # only your own: anyone else's is a 404, not a 403
+    view.delete()
+    messages.success(request, f"Deleted the view “{view.name}”.")
+    return redirect("messages")
 
 
 def _message_context(request, pk):
@@ -304,6 +376,7 @@ def suppression(request):
         "page": page, "q": q, "changes": changes.order_by("-at")[:20], "total": SuppressionEntry.objects.filter(region=region).count(),
         "can_remove": has_capability(request.user, "suppression_remove_single"),
         "can_bulk": has_capability(request.user, "suppression_bulk"),
+        "can_export": has_capability(request.user, "export_data"),
     })
 
 

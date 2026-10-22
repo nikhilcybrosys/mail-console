@@ -65,3 +65,16 @@ class WebAuthnCredential(models.Model):
     credential_data = models.BinaryField()  # serialized fido2 AttestedCredentialData
     created_at = models.DateTimeField(auto_now_add=True)
     last_used_at = models.DateTimeField(null=True, blank=True)
+
+
+class SavedView(models.Model):
+    """A named set of sent-mail filters, private to one person. `params` is a canonical, whitelisted query string."""
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="saved_views")
+    name = models.CharField(max_length=80)
+    params = models.CharField(max_length=500, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["name"]
+        constraints = [models.UniqueConstraint(fields=["user", "name"], name="uniq_saved_view_name_per_user")]

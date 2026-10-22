@@ -188,6 +188,13 @@ MAIL_ARCHIVE_ID = env("MC_MAIL_ARCHIVE_ID", "")
 
 # --- Business rules (tunable, but defaults are deliberate) ------------------------
 BULK_SUPPRESSION_APPROVAL_THRESHOLD = 50
+try:
+    EXPORT_MAX_ROWS = int(os.environ.get("MC_EXPORT_MAX_ROWS", "50000"))  # a CSV export refuses to start above this many messages (or addresses)
+except ValueError:
+    EXPORT_MAX_ROWS = 0
+if not 1 <= EXPORT_MAX_ROWS <= 1_000_000:
+    from django.core.exceptions import ImproperlyConfigured
+    raise ImproperlyConfigured("MC_EXPORT_MAX_ROWS must be a whole number between 1 and 1000000.")
 APPROVAL_TTL_HOURS = 24
 BODY_REVEAL_REQUIRES_REASON = True
 # Rates are fractions: 0.02 = 2%. SES itself reviews accounts at about 5% bounces and 0.1% complaints.

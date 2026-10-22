@@ -28,6 +28,7 @@ CAPABILITIES = {
     "account_attrs_write": {SECURITY_ADMIN},
     "view_setup": {DELIVERABILITY_ADMIN, SECURITY_ADMIN},
     "test_alert_channels": {DELIVERABILITY_ADMIN, SECURITY_ADMIN},
+    "export_data": {SUPPORT, DELIVERABILITY_ADMIN, SECURITY_ADMIN},
     "manage_users": {SECURITY_ADMIN},
     "approve": {DELIVERABILITY_ADMIN, SECURITY_ADMIN},
     "break_glass": {SECURITY_ADMIN},
