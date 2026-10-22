@@ -31,7 +31,7 @@
         "arn:aws:iam::__ACCOUNT_ID__:role/mail-console-write-ops",
         "arn:aws:iam::__ACCOUNT_ID__:role/mail-console-write-security"
       ],
-      "Condition": {"StringLike": {"sts:SourceIdentity": "*@__EMAIL_DOMAIN__"}}
+      "Condition": {"StringEquals": {"sts:SourceIdentity": "__ALLOWED_EMAILS__"}}
     },
     {
       "Sid": "NeverSendMail",

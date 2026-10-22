@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Fill the placeholders in aws/policies/*.json and write files ready to hand to the AWS CLI.
 
-    python3 aws/render.py --account-id 123456789012 --region ap-south-1 --email-domain example.com \
+    python3 aws/render.py --account-id 123456789012 --region ap-south-1 --allowed-email you@example.com --allowed-email colleague@example.com \
         --topic-arn arn:aws:sns:ap-south-1:123456789012:mail-console-ses-events \
         --queue-arn arn:aws:sqs:ap-south-1:123456789012:mail-console-events \
         --service-principal ec2.amazonaws.com
@@ -22,24 +22,40 @@ PLACEHOLDER = re.compile(r"__[A-Z_]+__")
 CHECKS = {
     "__ACCOUNT_ID__": (r"\d{12}", "a 12-digit AWS account id"),
     "__REGION__": (r"[a-z]{2}(-[a-z]+)+-\d", "a region such as ap-south-1"),
-    "__EMAIL_DOMAIN__": (r"([a-z0-9-]+\.)+[a-z]{2,}", "your organisation's e-mail domain, such as example.com"),
     "__TOPIC_ARN__": (r"arn:aws:sns:[a-z0-9-]+:\d{12}:[A-Za-z0-9_-]+", "an SNS topic ARN"),
     "__QUEUE_ARN__": (r"arn:aws:sqs:[a-z0-9-]+:\d{12}:[A-Za-z0-9_-]+", "an SQS queue ARN"),
     "__EXTERNAL_ID__": (r"[A-Za-z0-9+=,.@:/_-]{24,256}", "a secret of 24 to 256 letters, digits or + = , . @ : / _ -"),
     "__SERVICE_PRINCIPAL__": (r"[a-z0-9-]+\.amazonaws\.com", "the AWS service that runs the console, such as ec2.amazonaws.com or ecs-tasks.amazonaws.com"),
 }
 APP_ROLE_NAME = "mail-console-app"
+EMAIL = re.compile(r"[a-z0-9._%+-]{1,40}@([a-z0-9-]+\.)+[a-z]{2,}")  # exact, lowercase, no wildcards: SourceIdentity is matched exactly
+
+
+def clean_emails(raw):
+    emails = []
+    for e in raw or []:
+        e = e.strip().lower()
+        if not EMAIL.fullmatch(e) or len(e) > 64:  # 64 is the SourceIdentity length limit
+            raise SystemExit(f"--allowed-email {e!r} is not a plain e-mail address (no wildcards; at most 64 characters)")
+        if e not in emails:
+            emails.append(e)
+    if not emails:
+        raise SystemExit("give at least one --allowed-email: the people who may use the console's write roles")
+    if len(emails) > 25:
+        raise SystemExit("at most 25 allowed e-mail addresses")
+    return emails
 
 
 def build_values(args):
     values = {
-        "__ACCOUNT_ID__": args.account_id, "__REGION__": args.region, "__EMAIL_DOMAIN__": args.email_domain.lower(),
+        "__ACCOUNT_ID__": args.account_id, "__REGION__": args.region,
         "__TOPIC_ARN__": args.topic_arn, "__QUEUE_ARN__": args.queue_arn, "__SERVICE_PRINCIPAL__": args.service_principal,
         "__EXTERNAL_ID__": args.external_id or secrets.token_urlsafe(32),
     }
     for token, (pattern, what) in CHECKS.items():
         if not re.fullmatch(pattern, values[token]):
             raise SystemExit(f"{token}: {values[token]!r} is not {what}")
+    values["__ALLOWED_EMAILS__"] = clean_emails(args.allowed_email)
     values["__APP_ROLE_ARN__"] = f"arn:aws:iam::{values['__ACCOUNT_ID__']}:role/{APP_ROLE_NAME}"
     return values
 
@@ -50,7 +66,10 @@ def render(values):
     for path in sorted(POLICY_DIR.glob("*.json")):
         text = path.read_text()
         for token, value in values.items():
-            text = text.replace(token, value)
+            if token == "__ALLOWED_EMAILS__":  # a JSON array, substituted for the whole quoted token
+                text = text.replace(f'"{token}"', json.dumps(value))
+            else:
+                text = text.replace(token, value)
         left = set(PLACEHOLDER.findall(text))
         if left:
             raise SystemExit(f"{path.name}: unfilled placeholders {sorted(left)}")
@@ -65,7 +84,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--account-id", required=True)
     ap.add_argument("--region", required=True)
-    ap.add_argument("--email-domain", required=True, help="people who may use the write roles must have an address at this domain")
+    ap.add_argument("--allowed-email", action="append", default=[], help="an e-mail address allowed to act through the write roles (repeat for several)")
     ap.add_argument("--topic-arn", required=True)
     ap.add_argument("--queue-arn", required=True)
     ap.add_argument("--service-principal", required=True)

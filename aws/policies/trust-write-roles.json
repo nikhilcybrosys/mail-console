@@ -7,8 +7,10 @@
       "Principal": {"AWS": "__APP_ROLE_ARN__"},
       "Action": ["sts:AssumeRole", "sts:SetSourceIdentity"],
       "Condition": {
-        "StringLike": {"sts:SourceIdentity": "*@__EMAIL_DOMAIN__"},
-        "StringEquals": {"sts:ExternalId": "__EXTERNAL_ID__"}
+        "StringEquals": {
+          "sts:SourceIdentity": "__ALLOWED_EMAILS__",
+          "sts:ExternalId": "__EXTERNAL_ID__"
+        }
       }
     }
   ]
