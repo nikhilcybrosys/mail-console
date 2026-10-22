@@ -13,6 +13,7 @@ import argparse
 import json
 import pathlib
 import re
+import secrets
 import sys
 
 POLICY_DIR = pathlib.Path(__file__).resolve().parent / "policies"
@@ -24,6 +25,7 @@ CHECKS = {
     "__EMAIL_DOMAIN__": (r"([a-z0-9-]+\.)+[a-z]{2,}", "your organisation's e-mail domain, such as example.com"),
     "__TOPIC_ARN__": (r"arn:aws:sns:[a-z0-9-]+:\d{12}:[A-Za-z0-9_-]+", "an SNS topic ARN"),
     "__QUEUE_ARN__": (r"arn:aws:sqs:[a-z0-9-]+:\d{12}:[A-Za-z0-9_-]+", "an SQS queue ARN"),
+    "__EXTERNAL_ID__": (r"[A-Za-z0-9+=,.@:/_-]{24,256}", "a secret of 24 to 256 letters, digits or + = , . @ : / _ -"),
     "__SERVICE_PRINCIPAL__": (r"[a-z0-9-]+\.amazonaws\.com", "the AWS service that runs the console, such as ec2.amazonaws.com or ecs-tasks.amazonaws.com"),
 }
 APP_ROLE_NAME = "mail-console-app"
@@ -33,6 +35,7 @@ def build_values(args):
     values = {
         "__ACCOUNT_ID__": args.account_id, "__REGION__": args.region, "__EMAIL_DOMAIN__": args.email_domain.lower(),
         "__TOPIC_ARN__": args.topic_arn, "__QUEUE_ARN__": args.queue_arn, "__SERVICE_PRINCIPAL__": args.service_principal,
+        "__EXTERNAL_ID__": args.external_id or secrets.token_urlsafe(32),
     }
     for token, (pattern, what) in CHECKS.items():
         if not re.fullmatch(pattern, values[token]):
@@ -66,14 +69,17 @@ def main(argv=None):
     ap.add_argument("--topic-arn", required=True)
     ap.add_argument("--queue-arn", required=True)
     ap.add_argument("--service-principal", required=True)
+    ap.add_argument("--external-id", default="", help="shared secret the write roles require; generated if omitted (it is printed once)")
     ap.add_argument("--out", default="aws-rendered")
     args = ap.parse_args(argv)
-    files = render(build_values(args))
+    values = build_values(args)
+    files = render(values)
     out = pathlib.Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     for name, text in files.items():
         (out / name).write_text(text)
     print(f"wrote {len(files)} files to {out}/")
+    print(f"\nMC_AWS_WRITE_ROLE_EXTERNAL_ID={values['__EXTERNAL_ID__']}\n(set this in the console's environment; it is also inside {out}/trust-write-roles.json. Treat it as a secret.)")
     return 0
 
 

@@ -49,5 +49,6 @@ me reasonable time to fix, I will not pursue action against you.
 - Serve the mail renderer from a **separate registrable domain** with no cookies (`MC_MAILVIEW_HOST`).
 - Never set `MC_DEBUG` or `MC_DEV_LOGIN` outside a throwaway local demo.
 - Use the read-only app role and the two narrow write roles from `aws/`; never grant `ses:Send*` to anything the console uses.
+- Keep `MC_AWS_WRITE_ROLE_EXTERNAL_ID` secret (the write roles require it) and run the console as its own unprivileged user.
 - Run the console on its **own host**, shared with no other service, and require IMDSv2 (see `aws/README.md`, "Where to run it").
 - Keep the audit bucket in Object Lock mode and review `login.identity_mismatch` audit events.

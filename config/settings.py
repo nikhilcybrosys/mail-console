@@ -158,6 +158,13 @@ AWS_REGIONS = [r for r in env("MC_AWS_REGIONS", "ap-south-1").split(",") if r]
 AWS_WRITE_ROLE_OPS_ARN = env("MC_AWS_WRITE_ROLE_OPS_ARN", "")
 AWS_WRITE_ROLE_SECURITY_ARN = env("MC_AWS_WRITE_ROLE_SECURITY_ARN", "")
 AWS_ASSUME_SESSION_SECONDS = 900
+# A shared secret the write roles require (sts:ExternalId) on top of the named person. It keeps other programs that happen to
+# run on the same server, and can reach the instance credentials, from assuming the write roles: only the console knows it.
+AWS_WRITE_ROLE_EXTERNAL_ID = env("MC_AWS_WRITE_ROLE_EXTERNAL_ID", "")
+if not DEBUG and (AWS_WRITE_ROLE_OPS_ARN or AWS_WRITE_ROLE_SECURITY_ARN) and not AWS_WRITE_ROLE_EXTERNAL_ID:
+    from django.core.exceptions import ImproperlyConfigured
+    raise ImproperlyConfigured("Write roles are configured but MC_AWS_WRITE_ROLE_EXTERNAL_ID is not set. The write roles require it: "
+                               "aws/render.py generates one (see aws/README.md).")
 SQS_EVENTS_QUEUE_URL = env("MC_SQS_EVENTS_QUEUE_URL", "")
 SQS_INBOUND_QUEUE_URL = env("MC_SQS_INBOUND_QUEUE_URL", "")
 EXPECTED_SNS_TOPIC_ARNS = [a for a in env("MC_EXPECTED_SNS_TOPIC_ARNS", "").split(",") if a]
