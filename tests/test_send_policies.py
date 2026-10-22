@@ -81,15 +81,14 @@ def test_send_boundary_caps_the_role_at_send_email_and_keeps_region_and_escalati
 
 
 def test_send_role_trusts_only_the_app_role_a_named_sender_and_the_shared_secret():
-    (s,) = load("trust-send-role.json")["Statement"]
-    assert s["Principal"] == {"AWS": "__APP_ROLE_ARN__"} and "sts:SetSourceIdentity" in s["Action"]
-    assert s["Condition"] == {"StringEquals": {"sts:SourceIdentity": "__SEND_EMAILS__", "sts:ExternalId": "__EXTERNAL_ID__"}}
+    from .test_aws_policies import check_trust
+    check_trust("trust-send-role.json", "__SEND_EMAILS__")
 
 
-def test_app_role_extra_policy_can_only_assume_the_send_role_as_a_named_sender_and_has_no_ses_action():
+def test_app_role_extra_policy_can_only_assume_the_send_role_and_has_no_ses_action():
     (s,) = load("app-assume-send.json")["Statement"]
     assert s["Resource"] == "arn:aws:iam::__ACCOUNT_ID__:role/mail-console-send"
-    assert s["Condition"] == {"StringEquals": {"sts:SourceIdentity": "__SEND_EMAILS__"}}
+    assert "Condition" not in s   # a SourceIdentity condition on the caller's side denies every assumption; the trust policy holds it (tested above)
     assert set(as_list(s["Action"])) == {"sts:AssumeRole", "sts:SetSourceIdentity"}
 
 
@@ -123,4 +122,4 @@ def test_rendered_send_policies_list_exact_addresses_and_no_wildcards():
     cond = json.loads(files["send.json"])["Statement"][0]["Condition"]["StringEquals"]
     assert cond["ses:FromAddress"] == ["notifications@corp.example", "support@corp.example"] and cond["aws:SourceIdentity"] == ["ann@corp.example"]
     for name in ("send.json", "trust-send-role.json", "app-assume-send.json"):
-        assert "*@" not in files[name] and '"*"' not in json.dumps(json.loads(files[name])["Statement"][0].get("Condition", {}))
+        assert "*@" not in files[name] and all('"*"' not in json.dumps(st.get("Condition", {})) for st in json.loads(files[name])["Statement"])

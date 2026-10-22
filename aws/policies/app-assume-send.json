@@ -2,11 +2,13 @@
   "Version": "2012-10-17",
   "Statement": [
     {
-      "Sid": "AssumeTheSendRoleOnlyAsANamedSender",
+      "Sid": "AssumeTheSendRole",
       "Effect": "Allow",
-      "Action": ["sts:AssumeRole", "sts:SetSourceIdentity"],
-      "Resource": "arn:aws:iam::__ACCOUNT_ID__:role/mail-console-send",
-      "Condition": {"StringEquals": {"sts:SourceIdentity": "__SEND_EMAILS__"}}
+      "Action": [
+        "sts:AssumeRole",
+        "sts:SetSourceIdentity"
+      ],
+      "Resource": "arn:aws:iam::__ACCOUNT_ID__:role/mail-console-send"
     }
   ]
 }
