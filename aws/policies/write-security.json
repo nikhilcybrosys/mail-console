@@ -7,8 +7,10 @@
       "Action": ["ses:DeleteEmailIdentity", "ses:PutEmailIdentityDkimAttributes", "ses:PutEmailIdentityMailFromAttributes"],
       "Resource": "arn:aws:ses:__REGION__:__ACCOUNT_ID__:identity/*",
       "Condition": {
-        "StringEquals": {"aws:RequestedRegion": "__REGION__"},
-        "StringLike": {"aws:SourceIdentity": "*@__EMAIL_DOMAIN__"}
+        "StringEquals": {
+          "aws:RequestedRegion": "__REGION__",
+          "aws:SourceIdentity": "__ALLOWED_EMAILS__"
+        }
       }
     },
     {
@@ -17,8 +19,10 @@
       "Action": ["ses:CreateConfigurationSetEventDestination", "ses:UpdateConfigurationSetEventDestination", "ses:DeleteConfigurationSetEventDestination"],
       "Resource": "arn:aws:ses:__REGION__:__ACCOUNT_ID__:configuration-set/*",
       "Condition": {
-        "StringEquals": {"aws:RequestedRegion": "__REGION__"},
-        "StringLike": {"aws:SourceIdentity": "*@__EMAIL_DOMAIN__"}
+        "StringEquals": {
+          "aws:RequestedRegion": "__REGION__",
+          "aws:SourceIdentity": "__ALLOWED_EMAILS__"
+        }
       }
     },
     {
@@ -27,8 +31,10 @@
       "Action": ["ses:PutAccountSendingAttributes", "ses:PutAccountSuppressionAttributes"],
       "Resource": "*",
       "Condition": {
-        "StringEquals": {"aws:RequestedRegion": "__REGION__"},
-        "StringLike": {"aws:SourceIdentity": "*@__EMAIL_DOMAIN__"}
+        "StringEquals": {
+          "aws:RequestedRegion": "__REGION__",
+          "aws:SourceIdentity": "__ALLOWED_EMAILS__"
+        }
       }
     },
     {

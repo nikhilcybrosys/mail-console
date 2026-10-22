@@ -11,7 +11,7 @@ and three IAM roles, all capped by a permissions boundary, **none of which can s
 
 | Role | What it can do |
 |---|---|
-| `mail-console-app` | Read SES state, read reputation metrics, consume the event queue, and *request* the two write roles (only as a named person). |
+| `mail-console-app` | Read SES state, read reputation metrics, consume the event queue, and *request* the two write roles (only as a named, allow-listed person). |
 | `mail-console-write-ops` | Add or remove suppression-list entries. Assumed per approved action. |
 | `mail-console-write-security` | Delete identities, change DKIM and MAIL FROM, change event destinations and account sending settings. Assumed per approved action. |
 
@@ -53,7 +53,7 @@ reach the metadata service. Allow inbound traffic on port 443 only, and restrict
 ```bash
 export AWS_REGION=ap-south-1 AWS_DEFAULT_REGION=ap-south-1
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-EMAIL_DOMAIN=example.com        # people with an address at this domain may use the write roles
+ALLOWED_EMAILS="you@example.com colleague@example.com"   # exactly who may act through the write roles (lowercase)
 
 # Dead-letter queue first, then the main queue that points at it.
 DLQ_URL=$(aws sqs create-queue --queue-name mail-console-events-dlq \
@@ -77,14 +77,14 @@ customer-managed KMS key whose policy lets `ses.amazonaws.com` use it (see the A
 ## 2. Fill in the policies
 
 ```bash
-python3 aws/render.py --account-id "$ACCOUNT_ID" --region "$AWS_REGION" --email-domain "$EMAIL_DOMAIN" \
+python3 aws/render.py --account-id "$ACCOUNT_ID" --region "$AWS_REGION" $(for e in $ALLOWED_EMAILS; do printf -- "--allowed-email %s " "$e"; done) \
   --topic-arn "$TOPIC_ARN" --queue-arn "$QUEUE_ARN" --service-principal ec2.amazonaws.com
 ```
 
 It also **prints a secret** (`MC_AWS_WRITE_ROLE_EXTERNAL_ID`): the write roles only accept a caller that presents it, so other programs that share the
 server cannot use the instance credentials to change SES settings. Put it in the console's environment file and nowhere else. This writes ready-to-use files to `./aws-rendered/` (git-ignored; they contain your account id) and refuses to continue if
 anything is invalid or left unfilled. Use `--service-principal ecs-tasks.amazonaws.com` if the console runs on ECS.
-Edit `aws/policies/*.json` first if you need a second region: the region condition is a single value.
+The write roles accept only the exact addresses you list (AWS's policy checker rejects a domain-wide wildcard as too permissive). Edit `aws/policies/*.json` first if you need a second region: the region condition is a single value.
 
 ## 3. Wire the queue and topic together
 

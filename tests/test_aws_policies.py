@@ -25,8 +25,8 @@ spec.loader.exec_module(render)
 SEND_ACTIONS = ["ses:SendEmail", "ses:SendBulkEmail", "ses:SendRawEmail", "ses:SendCustomVerificationEmail",
                 "ses:SendTemplatedEmail", "ses:SendBulkTemplatedEmail", "ses:SendBounce"]
 IDENTITY_POLICIES = ["console-read.json", "write-ops.json", "write-security.json"]
-DOCUMENTED = {"__EXTERNAL_ID__", "__ACCOUNT_ID__", "__REGION__", "__EMAIL_DOMAIN__", "__TOPIC_ARN__", "__QUEUE_ARN__", "__APP_ROLE_ARN__", "__SERVICE_PRINCIPAL__"}
-VALUES = dict(account_id="123456789012", region="ap-south-1", email_domain="corp.example",
+DOCUMENTED = {"__EXTERNAL_ID__", "__ACCOUNT_ID__", "__REGION__", "__ALLOWED_EMAILS__", "__TOPIC_ARN__", "__QUEUE_ARN__", "__APP_ROLE_ARN__", "__SERVICE_PRINCIPAL__"}
+VALUES = dict(account_id="123456789012", region="ap-south-1", allowed_email=["ann@corp.example", "bob@corp.example"],
               topic_arn="arn:aws:sns:ap-south-1:123456789012:mail-console-ses-events",
               queue_arn="arn:aws:sqs:ap-south-1:123456789012:mail-console-events", service_principal="ec2.amazonaws.com", external_id="x" * 32)
 
@@ -69,10 +69,10 @@ def test_render_fills_everything_and_rejects_bad_input(tmp_path):
     for text in files.values():
         assert not re.search(r"__[A-Z_]+__", text) and json.loads(text)
     assert json.loads(files["sqs-queue-attributes.json"])["Policy"]  # a JSON string, as the AWS CLI expects
-    for bad in ({"account_id": "123"}, {"region": "mars"}, {"topic_arn": "nope"}, {"email_domain": "no-dot"}, {"service_principal": "evil.com"}):
+    for bad in ({"account_id": "123"}, {"region": "mars"}, {"topic_arn": "nope"}, {"allowed_email": []}, {"allowed_email": ["*@corp.example"]}, {"allowed_email": ["not-an-email"]}, {"allowed_email": ["a@b.c d"]}, {"service_principal": "evil.com"}):
         with pytest.raises(SystemExit):
             render.build_values(render.argparse.Namespace(**{**VALUES, **bad}))
-    assert render.main(["--account-id", "123456789012", "--region", "ap-south-1", "--email-domain", "corp.example", "--topic-arn", VALUES["topic_arn"],
+    assert render.main(["--account-id", "123456789012", "--region", "ap-south-1", "--allowed-email", "ann@corp.example", "--topic-arn", VALUES["topic_arn"],
                         "--queue-arn", VALUES["queue_arn"], "--service-principal", "ec2.amazonaws.com", "--external-id", "y" * 32, "--out", str(tmp_path / "o")]) == 0
     assert (tmp_path / "o" / "console-read.json").exists()
 
@@ -106,22 +106,22 @@ def test_boundary_blocks_other_regions_and_self_escalation():
 @pytest.mark.parametrize("name", ["write-ops.json", "write-security.json"])
 def test_write_permissions_need_a_named_person_and_the_configured_region(name):
     for s in statements(load(name), "Allow"):
-        cond = s["Condition"]
-        assert cond["StringLike"]["aws:SourceIdentity"] == "*@__EMAIL_DOMAIN__", s["Sid"]
-        assert cond["StringEquals"]["aws:RequestedRegion"] == "__REGION__", s["Sid"]
+        cond = s["Condition"]["StringEquals"]
+        assert cond["aws:SourceIdentity"] == "__ALLOWED_EMAILS__", s["Sid"]
+        assert cond["aws:RequestedRegion"] == "__REGION__", s["Sid"]
 
 
 def test_write_roles_trust_only_the_app_role_a_named_person_and_the_shared_secret():
     (s,) = load("trust-write-roles.json")["Statement"]
     assert s["Principal"] == {"AWS": "__APP_ROLE_ARN__"} and "sts:SetSourceIdentity" in s["Action"]
-    assert s["Condition"]["StringLike"]["sts:SourceIdentity"] == "*@__EMAIL_DOMAIN__"
-    assert s["Condition"]["StringEquals"] == {"sts:ExternalId": "__EXTERNAL_ID__"}  # co-hosted programs without the secret are refused
+    assert s["Condition"] == {"StringEquals": {"sts:SourceIdentity": "__ALLOWED_EMAILS__", "sts:ExternalId": "__EXTERNAL_ID__"}}
+    # exact addresses and the shared secret: no wildcard, and co-hosted programs without the secret are refused
 
 
 def test_app_role_may_assume_exactly_the_two_write_roles_with_a_named_person():
     assume = next(s for s in load("console-read.json")["Statement"] if "sts:AssumeRole" in as_list(s["Action"]))
     assert sorted(assume["Resource"]) == ["arn:aws:iam::__ACCOUNT_ID__:role/mail-console-write-ops", "arn:aws:iam::__ACCOUNT_ID__:role/mail-console-write-security"]
-    assert assume["Condition"]["StringLike"]["sts:SourceIdentity"] == "*@__EMAIL_DOMAIN__"
+    assert assume["Condition"] == {"StringEquals": {"sts:SourceIdentity": "__ALLOWED_EMAILS__"}}
 
 
 def test_read_policy_contains_no_write_actions():
@@ -213,3 +213,13 @@ def test_production_refuses_write_roles_without_the_shared_secret():
     assert code != 0 and "MC_AWS_WRITE_ROLE_EXTERNAL_ID" in err
     assert _import_settings(**role, MC_AWS_WRITE_ROLE_EXTERNAL_ID="z" * 32)[0] == 0
     assert _import_settings()[0] == 0  # no write roles configured: nothing to protect, no complaint
+
+
+def test_rendered_policies_list_exact_addresses_and_contain_no_wildcard_identity():
+    files = render.render(render.build_values(render.argparse.Namespace(**VALUES)))
+    trust = json.loads(files["trust-write-roles.json"])["Statement"][0]["Condition"]["StringEquals"]
+    assert trust["sts:SourceIdentity"] == ["ann@corp.example", "bob@corp.example"]
+    for name in ("console-read.json", "write-ops.json", "write-security.json", "trust-write-roles.json"):
+        text = files[name]
+        assert "*@" not in text, f"{name}: a wildcard on the acting person is too permissive (IAM Access Analyzer reports it as an error)"
+    assert render.clean_emails([" Ann@Corp.Example ", "ann@corp.example"]) == ["ann@corp.example"]  # lowercased and de-duplicated

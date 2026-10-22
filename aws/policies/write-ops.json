@@ -7,8 +7,10 @@
       "Action": ["ses:PutSuppressedDestination", "ses:DeleteSuppressedDestination"],
       "Resource": "*",
       "Condition": {
-        "StringEquals": {"aws:RequestedRegion": "__REGION__"},
-        "StringLike": {"aws:SourceIdentity": "*@__EMAIL_DOMAIN__"}
+        "StringEquals": {
+          "aws:RequestedRegion": "__REGION__",
+          "aws:SourceIdentity": "__ALLOWED_EMAILS__"
+        }
       }
     },
     {
