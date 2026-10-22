@@ -75,6 +75,17 @@ Any OpenID Connect provider with a discovery URL works (Google, Okta, Microsoft 
   until you configure it. Use a tenant-specific discovery URL: multi-tenant endpoints (templated issuer) are refused.
 - Changes to SES additionally ask for a passkey.
 
+## Limiting a person to some domains
+A person can be limited to some From-domains (set when you add them). It narrows what they see; it is **not** a tenant boundary.
+
+- **Covered:** the sent-mail list and details, search, domains and DNS, the overview's top senders, provider breakdown and
+  cost estimate, alerts (account-level ones and their own domains' DNS alerts; per-app alerts and any unrecognised kind are
+  hidden), and the suppression list, its history, its CSV export and removals (only addresses their own domains mailed).
+- **Not covered:** the audit log, the approvals queue, the inbox and DMARC reports, the overview's account-wide totals and charts,
+  the event pipeline page, the From addresses offered by Compose, and the Prometheus endpoint. Give a limited person a role
+  without access to these (a viewer sees none of the first three), and do not rely on scope to keep one brand's data from
+  another brand's administrators. For that, run separate consoles.
+
 ## Compose (optional)
 Write and send a one-off message from an address you own, without leaving the console. Off unless `MC_SEND_ENABLED=1` (setup in
 `aws/README.md`, section 8). It is for one-off mail, not campaigns: no lists, no attachments, no scheduling.
