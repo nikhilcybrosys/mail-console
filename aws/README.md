@@ -15,10 +15,11 @@ and three IAM roles, all capped by a permissions boundary, **none of which can s
 | `mail-console-write-ops` | Add or remove suppression-list entries. Assumed per approved action. |
 | `mail-console-write-security` | Delete identities, change DKIM and MAIL FROM, change event destinations and account sending settings. Assumed per approved action. |
 
-> **Status: not yet run against a real AWS account.** The policy files are verified by automated tests
-> (`tests/test_aws_policies.py`: no console role can send mail, write access needs a named person, and the policies match
-> exactly what the code calls), but AWS itself has not evaluated them. Try this in a non-production account first, and
-> check the result with the policy simulator (step 7).
+> **Status:** steps 1 to 5 have been applied to one real production account (Mumbai, ap-south-1) and checked there:
+> the policies pass IAM Access Analyzer with no findings, a test event published to the topic arrived in the queue and
+> was parsed by the app, and the policy simulator gave the results listed in step 7. The console process itself has not
+> yet run against live events. Try this in a non-production account first if you can, and check the result with the policy
+> simulator (step 7).
 
 ## Where to run it: its own small server
 Give the console its own small instance (or container host) that runs nothing else, about $10 to 15 a month. This matters more
@@ -204,7 +205,12 @@ aws iam simulate-principal-policy --policy-source-arn "$APP_ROLE_ARN" \
 
 Expected: the three `Send` actions are `explicitDeny`, `ses:GetAccount` is `allowed`, and `ses:DeleteSuppressedDestination`
 is `implicitDeny` (the app role is read-only; only the write role, reached through an approval, can do that). Repeat with
-`mail-console-write-ops` and `mail-console-write-security` as the source.
+`mail-console-write-ops` and `mail-console-write-security` as the source. Their permissions apply only to a named
+person, so add a second context entry such as `ContextKeyName=aws:SourceIdentity,ContextKeyValues=you@example.com,ContextKeyType=string`
+(with your allowed address, then with a different one, which must stay `implicitDeny`).
+
+The simulator does not set `aws:RequestedRegion` or `aws:SourceIdentity` for you. Without them it reports the region
+guard as `explicitDeny` even for allowed read calls, which looks like a bug but is the simulator missing context.
 
 ## Changing or removing things
 Remove the SES event destination before deleting the topic, and delete the subscription before the queue. Delete the
