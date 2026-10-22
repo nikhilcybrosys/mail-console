@@ -23,7 +23,7 @@ Only the latest release and the `main` branch receive security fixes while the p
 ## Scope
 
 In scope: the console application (`apps/`, `config/`, `templates/`, `static/`), the mail renderer on its separate origin,
-the approval and audit mechanisms, sign-in and passkey handling, the Docker image, and the Terraform in `infra/`.
+the approval and audit mechanisms, sign-in and passkey handling, the Docker image, and the IAM policies and setup steps in `aws/`.
 
 Particularly interesting to me:
 - anything that makes untrusted email content execute script, load remote resources or escape the sandboxed viewer;
@@ -48,5 +48,5 @@ me reasonable time to fix, I will not pursue action against you.
 - Set `MC_OIDC_ALLOWED_DOMAIN` (the app refuses to start without a domain policy) and provision users explicitly.
 - Serve the mail renderer from a **separate registrable domain** with no cookies (`MC_MAILVIEW_HOST`).
 - Never set `MC_DEBUG` or `MC_DEV_LOGIN` outside a throwaway local demo.
-- Give the console role read-only SES access plus the narrow write roles in `infra/`; never grant `ses:Send*`.
+- Use the read-only app role and the two narrow write roles from `aws/`; never grant `ses:Send*` to anything the console uses.
 - Keep the audit bucket in Object Lock mode and review `login.identity_mismatch` audit events.

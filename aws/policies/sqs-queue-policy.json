@@ -1,0 +1,13 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "OnlyOurTopicMayDeliver",
+      "Effect": "Allow",
+      "Principal": {"Service": "sns.amazonaws.com"},
+      "Action": "sqs:SendMessage",
+      "Resource": "__QUEUE_ARN__",
+      "Condition": {"ArnEquals": {"aws:SourceArn": "__TOPIC_ARN__"}}
+    }
+  ]
+}

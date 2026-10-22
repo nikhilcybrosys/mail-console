@@ -1,0 +1,12 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "OnlyTheConsoleAppRoleAndOnlyAsANamedPerson",
+      "Effect": "Allow",
+      "Principal": {"AWS": "__APP_ROLE_ARN__"},
+      "Action": ["sts:AssumeRole", "sts:SetSourceIdentity"],
+      "Condition": {"StringLike": {"sts:SourceIdentity": "*@__EMAIL_DOMAIN__"}}
+    }
+  ]
+}

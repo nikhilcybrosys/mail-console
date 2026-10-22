@@ -16,6 +16,3 @@
 ## Dependencies
 Dependabot opens weekly pull requests. Django major versions are ignored on purpose (the project follows the 5.2 LTS
 line); change `.github/dependabot.yml` when you decide to upgrade. Regenerate `requirements.lock` after upgrades.
-
-## Terraform provider lock
-See "Provider lock files" in `infra/README.md`.

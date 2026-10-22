@@ -21,8 +21,10 @@ Nothing here has been run against a real AWS account.
 - **Interface:** server-rendered Django and HTMX with a token-based design system, light and dark themes, two
   densities, a command palette, a detail drawer and keyboard navigation. Every screen is covered by a lint for CSP and
   design-system rules, a WCAG AA contrast test, and a real-browser run (zero CSP violations, zero axe findings).
-- **Infrastructure as code:** Terraform for the whole stack. `terraform fmt` and `validate` pass; it has **never been
-  planned or applied**, so IAM, KMS and policy correctness is unproven (`infra/README.md` lists known gaps).
+- **AWS setup:** plain AWS CLI steps and IAM policy files in `aws/` (an SNS topic and SQS queue for SES events, a
+  read-only app role, two narrow write roles, and a permissions boundary). Tests prove that no console role can send mail,
+  that write access needs a named person, and that the policies match exactly what the code calls (checked both ways, and
+  the tests were mutation-checked). **Never run against a real AWS account**: AWS itself has not evaluated these policies.
 
 ## Known gaps
 - Mail Manager archive sync and an inbox fed by it; scan-result ingestion that sets attachment `scan_state`.
@@ -30,11 +32,11 @@ Nothing here has been run against a real AWS account.
 - The filter bar has removable chips but no "add filter" menu; no saved views; no CSV export.
 - Event table is not partitioned (fine for tens of millions of rows; see `docs/DEVIATIONS.md`).
 - Sign-in and passkeys have not been exercised against a real provider or authenticator.
-- CI (GitHub Actions) is green on `main`: tests on PostgreSQL 16, Django deployment checks, Terraform format and validate, a
-  dependency vulnerability and licence audit, and a Docker build with a smoke test of the demo (lint, image build, healthy
-  start, login and pages respond, container runs as an unprivileged user). Terraform has **never been planned or applied**
-  and nothing has been deployed: there is no image registry or deployment pipeline yet. Environment names match the app
-  (checked by script), and `/healthz/` and the worker heartbeat file exist.
+- CI (GitHub Actions) is green on `main`: tests on PostgreSQL 16 (including the AWS policy tests), Django deployment checks, a
+  migrations check, a dependency vulnerability and licence audit, and a Docker build with a smoke test of the demo (lint,
+  image build, healthy start, login and pages respond, container runs as an unprivileged user). Nothing has been deployed
+  and there is no hosting stack: run the container on any small server (see `aws/README.md`). `/healthz/` and the worker
+  heartbeat file exist for health checks.
 
 ## Repository
 Public under Apache-2.0. GitHub settings in place: private vulnerability reporting (what `SECURITY.md` points to), secret

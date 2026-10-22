@@ -13,7 +13,7 @@ REPO="${1:?usage: scripts/github_repo_settings.sh OWNER/REPO [--dry-run]}"
 DRY="${2:-}"
 
 # The CI job names that must pass before anything is merged (see .github/workflows/ci.yml).
-CHECKS='["Tests (PostgreSQL 16)", "Terraform (fmt and validate)", "Dependencies (vulnerabilities and licences)", "Docker image and demo", "Sign-off (DCO)"]'
+CHECKS='["Tests (PostgreSQL 16)", "Dependencies (vulnerabilities and licences)", "Docker image and demo", "Sign-off (DCO)"]'
 
 apply() { # apply "description" -- gh api args...
   local what="$1"; shift 2

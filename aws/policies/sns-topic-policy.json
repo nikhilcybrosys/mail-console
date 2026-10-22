@@ -1,0 +1,23 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "OwnerAccountAdministersTheTopic",
+      "Effect": "Allow",
+      "Principal": {"AWS": "arn:aws:iam::__ACCOUNT_ID__:root"},
+      "Action": ["sns:Publish", "sns:Subscribe", "sns:GetTopicAttributes", "sns:SetTopicAttributes", "sns:ListSubscriptionsByTopic", "sns:AddPermission", "sns:RemovePermission", "sns:DeleteTopic"],
+      "Resource": "__TOPIC_ARN__"
+    },
+    {
+      "Sid": "OnlySesInThisAccountMayPublish",
+      "Effect": "Allow",
+      "Principal": {"Service": "ses.amazonaws.com"},
+      "Action": "sns:Publish",
+      "Resource": "__TOPIC_ARN__",
+      "Condition": {
+        "StringEquals": {"AWS:SourceAccount": "__ACCOUNT_ID__"},
+        "StringLike": {"AWS:SourceArn": "arn:aws:ses:__REGION__:__ACCOUNT_ID__:*"}
+      }
+    }
+  ]
+}
