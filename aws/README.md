@@ -117,6 +117,13 @@ for tier in ops security; do
 done
 ```
 
+**Why the trust policies have three statements.** AWS does not supply `sts:ExternalId` when it checks `sts:SetSourceIdentity`, so
+one statement that grants both and requires the secret denies every assumption (found by trying it for real: the policy
+simulator said it was fine). The trust policies therefore *allow* AssumeRole with the secret, *allow* SetSourceIdentity for the named
+people, and *deny* both actions for any other SourceIdentity. The deny is what makes a named person mandatory: Allows are ORed,
+and a request with no SourceIdentity at all counts as "not in the list". Do not put an `sts:SourceIdentity` condition on the app
+role's own assume statements either: AWS does not evaluate it there for SetSourceIdentity.
+
 If the console runs on a single EC2 instance, give it the app role (no access keys anywhere):
 
 ```bash

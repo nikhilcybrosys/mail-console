@@ -24,14 +24,13 @@
       "Resource": "__QUEUE_ARN__"
     },
     {
-      "Sid": "AssumeTheTwoWriteRolesOnlyAsANamedPerson",
+      "Sid": "AssumeTheTwoWriteRoles",
       "Effect": "Allow",
       "Action": ["sts:AssumeRole", "sts:SetSourceIdentity"],
       "Resource": [
         "arn:aws:iam::__ACCOUNT_ID__:role/mail-console-write-ops",
         "arn:aws:iam::__ACCOUNT_ID__:role/mail-console-write-security"
-      ],
-      "Condition": {"StringEquals": {"sts:SourceIdentity": "__ALLOWED_EMAILS__"}}
+      ]
     },
     {
       "Sid": "NeverSendMail",

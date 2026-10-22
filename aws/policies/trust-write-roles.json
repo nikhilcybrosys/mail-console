@@ -2,14 +2,44 @@
   "Version": "2012-10-17",
   "Statement": [
     {
-      "Sid": "OnlyTheConsoleAppRoleAndOnlyAsANamedPerson",
+      "Sid": "AllowWithTheSharedSecret",
       "Effect": "Allow",
-      "Principal": {"AWS": "__APP_ROLE_ARN__"},
-      "Action": ["sts:AssumeRole", "sts:SetSourceIdentity"],
+      "Principal": {
+        "AWS": "__APP_ROLE_ARN__"
+      },
+      "Action": "sts:AssumeRole",
       "Condition": {
         "StringEquals": {
-          "sts:SourceIdentity": "__ALLOWED_EMAILS__",
           "sts:ExternalId": "__EXTERNAL_ID__"
+        }
+      }
+    },
+    {
+      "Sid": "AllowNamingAnAllowedPerson",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "__APP_ROLE_ARN__"
+      },
+      "Action": "sts:SetSourceIdentity",
+      "Condition": {
+        "StringEquals": {
+          "sts:SourceIdentity": "__ALLOWED_EMAILS__"
+        }
+      }
+    },
+    {
+      "Sid": "RefuseAnyoneButAnAllowedPerson",
+      "Effect": "Deny",
+      "Principal": {
+        "AWS": "__APP_ROLE_ARN__"
+      },
+      "Action": [
+        "sts:AssumeRole",
+        "sts:SetSourceIdentity"
+      ],
+      "Condition": {
+        "StringNotEquals": {
+          "sts:SourceIdentity": "__ALLOWED_EMAILS__"
         }
       }
     }

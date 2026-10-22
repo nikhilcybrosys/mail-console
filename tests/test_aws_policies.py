@@ -112,17 +112,35 @@ def test_write_permissions_need_a_named_person_and_the_configured_region(name):
         assert cond["aws:RequestedRegion"] == "__REGION__", s["Sid"]
 
 
+def check_trust(name, who_token):
+    """The shape that works in real AWS (verified in production; a single statement did not). AWS does not supply
+    sts:ExternalId when it checks sts:SetSourceIdentity, so a statement that grants both and requires the secret denies
+    every assumption. So: Allow AssumeRole with the secret; Allow SetSourceIdentity for the named people; and a Deny of
+    both actions for any other SourceIdentity (a missing one counts as 'not in the list'), which is what actually makes
+    the named person mandatory, since Allows are ORed."""
+    allow_assume, allow_set, deny = load(name)["Statement"]
+    me = {"AWS": "__APP_ROLE_ARN__"}
+    assert allow_assume["Principal"] == allow_set["Principal"] == deny["Principal"] == me
+    assert (allow_assume["Effect"], allow_set["Effect"], deny["Effect"]) == ("Allow", "Allow", "Deny")
+    assert allow_assume["Action"] == "sts:AssumeRole" and allow_assume["Condition"] == {"StringEquals": {"sts:ExternalId": "__EXTERNAL_ID__"}}
+    assert allow_set["Action"] == "sts:SetSourceIdentity" and allow_set["Condition"] == {"StringEquals": {"sts:SourceIdentity": who_token}}
+    assert set(as_list(deny["Action"])) == {"sts:AssumeRole", "sts:SetSourceIdentity"}
+    assert deny["Condition"] == {"StringNotEquals": {"sts:SourceIdentity": who_token}}
+
+
 def test_write_roles_trust_only_the_app_role_a_named_person_and_the_shared_secret():
-    (s,) = load("trust-write-roles.json")["Statement"]
-    assert s["Principal"] == {"AWS": "__APP_ROLE_ARN__"} and "sts:SetSourceIdentity" in s["Action"]
-    assert s["Condition"] == {"StringEquals": {"sts:SourceIdentity": "__ALLOWED_EMAILS__", "sts:ExternalId": "__EXTERNAL_ID__"}}
-    # exact addresses and the shared secret: no wildcard, and co-hosted programs without the secret are refused
+    check_trust("trust-write-roles.json", "__ALLOWED_EMAILS__")   # exact addresses and the shared secret: no wildcard
 
 
-def test_app_role_may_assume_exactly_the_two_write_roles_with_a_named_person():
+def test_app_role_may_assume_exactly_the_two_write_roles():
     assume = next(s for s in load("console-read.json")["Statement"] if "sts:AssumeRole" in as_list(s["Action"]))
     assert sorted(assume["Resource"]) == ["arn:aws:iam::__ACCOUNT_ID__:role/mail-console-write-ops", "arn:aws:iam::__ACCOUNT_ID__:role/mail-console-write-security"]
-    assert assume["Condition"] == {"StringEquals": {"sts:SourceIdentity": "__ALLOWED_EMAILS__"}}
+    assert set(as_list(assume["Action"])) == {"sts:AssumeRole", "sts:SetSourceIdentity"}
+    # Found by running it for real: AWS does NOT populate sts:SourceIdentity when it evaluates the CALLER's identity policy for
+    # sts:SetSourceIdentity, so a condition on it there denies every assumption (the earlier simulator run only passed because it
+    # supplied the key by hand). The named-person rule is enforced where AWS does evaluate it: the target roles' trust policies
+    # (tested above), which also require the shared secret.
+    assert "Condition" not in assume
 
 
 def test_read_policy_contains_no_write_actions():
@@ -220,8 +238,8 @@ def test_production_refuses_write_roles_without_the_shared_secret():
 
 def test_rendered_policies_list_exact_addresses_and_contain_no_wildcard_identity():
     files = render.render(render.build_values(render.argparse.Namespace(**VALUES)))
-    trust = json.loads(files["trust-write-roles.json"])["Statement"][0]["Condition"]["StringEquals"]
-    assert trust["sts:SourceIdentity"] == ["ann@corp.example", "bob@corp.example"]
+    st = json.loads(files["trust-write-roles.json"])["Statement"]
+    assert st[1]["Condition"]["StringEquals"]["sts:SourceIdentity"] == st[2]["Condition"]["StringNotEquals"]["sts:SourceIdentity"] == ["ann@corp.example", "bob@corp.example"]
     for name in ("console-read.json", "write-ops.json", "write-security.json", "trust-write-roles.json"):
         text = files[name]
         assert "*@" not in text, f"{name}: a wildcard on the acting person is too permissive (IAM Access Analyzer reports it as an error)"
