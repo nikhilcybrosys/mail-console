@@ -28,6 +28,14 @@ class UnexpectedTopic(ParseError):
     pass
 
 
+class IgnoredMessage(Exception):
+    """A known, harmless control message (not an event). The consumer deletes it instead of retrying."""
+
+
+# SES publishes this plain-text notice to the topic when an event destination is created.
+_SES_TOPIC_VALIDATION = "Successfully validated SNS topic for Amazon SES event publishing."
+
+
 @dataclass
 class NormalizedEvent:
     ses_message_id: str
@@ -88,6 +96,8 @@ def unwrap(body, expected_topics):
         try:
             return json.loads(outer["Message"])
         except (TypeError, ValueError) as exc:
+            if isinstance(outer.get("Message"), str) and outer["Message"].strip() == _SES_TOPIC_VALIDATION:
+                raise IgnoredMessage("SES topic validation notice") from exc
             raise ParseError("SNS Message is not JSON") from exc
     return outer
 

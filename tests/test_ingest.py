@@ -108,3 +108,15 @@ def test_recipient_address_matching_is_case_insensitive_but_preserves_case():
     process_body(f.sns(f.delivery(rcpts=("alice@example.com",), dest=("Alice@Example.com",))), TOPICS)
     r = MessageRecipient.objects.get()
     assert r.address == "Alice@Example.com" and r.state == "delivery"
+
+
+def test_ses_topic_validation_message_is_ignored_not_retried():
+    """SES publishes this plain-text notice when an event destination is created (seen on a real topic)."""
+    from apps.sesdata.events import IgnoredMessage
+    body = json.dumps({"Type": "Notification", "TopicArn": f.TOPIC, "MessageId": "x",
+                       "Message": "Successfully validated SNS topic for Amazon SES event publishing.", "SignatureVersion": "1"})
+    with pytest.raises(IgnoredMessage):
+        unwrap(body, TOPICS)
+    other = json.dumps({"Type": "Notification", "TopicArn": f.TOPIC, "MessageId": "x", "Message": "something else", "SignatureVersion": "1"})
+    with pytest.raises(ParseError):  # anything else that is not JSON is still anomalous
+        unwrap(other, TOPICS)
