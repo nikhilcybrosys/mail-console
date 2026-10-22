@@ -140,7 +140,7 @@ def release(request, pk):
         return redirect("compose")
     draft = _mine(request, pk)
     if service.effective_state(draft) == Draft.UNKNOWN:
-        Draft.objects.filter(pk=draft.pk).update(state=Draft.DRAFT)
+        Draft.objects.filter(pk=draft.pk).update(state=Draft.DRAFT, reserved=0)  # the person says it did not go out
         record("compose.unknown_released", request=request, details={"draft": draft.pk, "subject": draft.subject[:100]})
         messages.success(request, "Reopened as a draft. Only send it again if you are sure it did not go out.")
     return redirect("compose")

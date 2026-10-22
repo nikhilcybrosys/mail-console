@@ -35,6 +35,9 @@ class Draft(models.Model):
     # draft: editable. sending: a send is in progress. unknown: the send call ended without a clear answer, so the mail
     # MAY have gone out; it must be checked in Sent mail before anyone sends it again.
     state = models.CharField(max_length=10, default=DRAFT)
+    # Recipients reserved against the limits while a send is in flight or its outcome is unknown, so two sends at once
+    # cannot both pass a limit that only one of them fits under. Cleared when the draft returns to a plain draft.
+    reserved = models.PositiveIntegerField(default=0)
     updated_at = models.DateTimeField(auto_now=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
