@@ -1,0 +1,17 @@
+{% extends "base.html" %}{% load i18n ui %}
+{% block title %}{% trans "Template" %}{% endblock %}
+{% block crumbs %}<a href="{% url 'compose' %}">{% trans "Compose" %}</a> / <span aria-current="page">{% if t.pk %}{% trans "Edit template" %}{% else %}{% trans "New template" %}{% endif %}</span>{% endblock %}
+{% block content %}
+<div class="ph"><div><h1>{% if t.pk %}{% trans "Edit template" %}{% else %}{% trans "New template" %}{% endif %}</h1>
+  <p>{% trans "A reusable message. Put {{first_name}}-style placeholders where details change (lowercase letters, digits and underscores). Whoever uses the template fills them in, and a message with an unfilled placeholder cannot be sent." %}</p></div></div>
+{% if errors %}<div class="callout callout-err" role="alert">{% icon "circle-alert" %}<div><div class="callout-title">{% trans "Fix these first" %}</div><ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul></div></div><br>{% endif %}
+<form method="post" class="card"><div class="card-body stack">{% csrf_token %}
+  <div class="field"><label class="label" for="t-name">{% trans "Name" %}</label><input class="input" id="t-name" name="name" maxlength="80" value="{{ t.name }}" required autocomplete="off"><span class="help">{% trans "Shown to everyone who can compose." %}</span></div>
+  <div class="field"><label class="label" for="t-from">{% trans "Default From" %} <span class="muted">({% trans "optional" %})</span></label>
+    <select class="select" id="t-from" name="from_address"><option value="">{% trans "Choose when using it" %}</option>
+      {% for s in senders %}<option value="{{ s.address }}" {% if t.from_address == s.address %}selected{% endif %}>{{ s.address }}</option>{% endfor %}</select></div>
+  <div class="field"><label class="label" for="t-subject">{% trans "Subject" %}</label><input class="input" id="t-subject" name="subject" value="{{ t.subject }}" autocomplete="off"></div>
+  <div class="field"><label class="label" for="t-body">{% trans "Message" %}</label><textarea class="textarea" id="t-body" name="body" rows="14">{{ t.body }}</textarea></div>
+  <div class="btn-group"><button class="btn btn-primary" type="submit">{% trans "Save template" %}</button><a class="btn btn-ghost" href="{% url 'compose' %}">{% trans "Cancel" %}</a></div>
+</div></form>
+{% endblock %}

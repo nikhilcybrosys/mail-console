@@ -1,0 +1,14 @@
+{% extends "base.html" %}{% load i18n ui %}
+{% block title %}{% trans "Use template" %}{% endblock %}
+{% block crumbs %}<a href="{% url 'compose' %}">{% trans "Compose" %}</a> / <span aria-current="page">{{ t.name }}</span>{% endblock %}
+{% block content %}
+<div class="ph"><div><h1>{{ t.name }}</h1><p>{% trans "Fill in the details. You will get a draft to add recipients to and check before anything is sent." %}</p></div></div>
+{% if errors %}<div class="callout callout-err" role="alert">{% icon "circle-alert" %}<div><ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul></div></div><br>{% endif %}
+<div class="grid-main">
+  <form method="post" class="card"><div class="card-body stack">{% csrf_token %}
+    {% for n in names %}<div class="field"><label class="label" for="v-{{ n }}">{{ n }}</label><input class="input" id="v-{{ n }}" name="var_{{ n }}" maxlength="200" value="{% for k, v in values.items %}{% if k == n %}{{ v }}{% endif %}{% endfor %}" autocomplete="off" {% if forloop.first %}autofocus{% endif %}></div>{% endfor %}
+    <div class="btn-group"><button class="btn btn-primary" type="submit">{% trans "Create draft" %}</button><a class="btn btn-ghost" href="{% url 'compose' %}">{% trans "Cancel" %}</a></div>
+  </div></form>
+  <section class="card"><div class="card-head"><div class="card-title">{% trans "The template" %}</div></div><div class="card-body stack"><p class="cell-primary">{{ t.subject }}</p><pre class="preview-text">{{ t.body }}</pre></div></section>
+</div>
+{% endblock %}

@@ -27,7 +27,7 @@ from apps.audit.service import record
 from apps.sesdata import aws
 from apps.sesdata.models import SuppressionEntry
 
-from .models import Draft, SenderAddress, SentMail
+from .models import Draft, MessageTemplate, SenderAddress, SentMail
 
 MAX_DRAFTS_PER_USER = 50
 STUCK_AFTER = timedelta(minutes=2)  # a "sending" draft older than this is treated as unknown
@@ -35,6 +35,95 @@ _CONTROL = re.compile(r"[\x00-\x1f\x7f]")  # includes CR, LF and tab
 _SPLIT = re.compile(r"[,;\n]+")
 _URL = re.compile(r"https?://[^\s<>\"']+")
 _BAD_NAME = re.compile(r"[\x00-\x1f\x7f<>\"@,;\\]")
+
+
+# ---------------------------------------------------------------- templates and placeholders
+MAX_TEMPLATES = 100
+MAX_VARIABLES = 20
+MAX_VALUE = 200
+_VAR = re.compile(r"\{\{\s*([a-z][a-z0-9_]{0,29})\s*\}\}")
+_ANY = re.compile(r"\{\{.*?\}\}", re.S)
+
+
+def find_variables(*texts):
+    """The placeholder names used, in order of first appearance."""
+    seen = []
+    for t in texts:
+        for m in _VAR.finditer(t or ""):
+            if m.group(1) not in seen:
+                seen.append(m.group(1))
+    return seen
+
+
+def leftover_placeholders(*texts):
+    """Anything still shaped like {{...}}: an unfilled placeholder, or something that merely looks like one."""
+    out = []
+    for t in texts:
+        for m in _ANY.finditer(t or ""):
+            if m.group(0) not in out:
+                out.append(m.group(0))
+    return out
+
+
+def check_template(name, from_address, subject, body, *, exclude_pk=None):
+    """-> (cleaned dict, errors). Checks a template the same way a draft is checked, plus its placeholders."""
+    errors = []
+    name = " ".join((name or "").split())[:80]
+    subject, body = (subject or "").strip(), (body or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    from_address = (from_address or "").strip().lower()
+    if not name:
+        errors.append("Give the template a name.")
+    elif MessageTemplate.objects.filter(name_lower=name.lower()).exclude(pk=exclude_pk).exists():
+        errors.append("A template with that name already exists.")
+    if from_address and from_address not in settings.SEND_FROM_ADDRESSES:
+        errors.append("That default From address is not one Compose can send as.")
+    if not subject:
+        errors.append("Add a subject.")
+    elif len(subject) > settings.SEND_MAX_SUBJECT:
+        errors.append(f"The subject is too long (at most {settings.SEND_MAX_SUBJECT} characters).")
+    elif _CONTROL.search(subject):
+        errors.append("The subject cannot contain line breaks or control characters.")
+    if not body:
+        errors.append("Write the message.")
+    elif len(body) > settings.SEND_MAX_BODY:
+        errors.append(f"The message is too long (at most {settings.SEND_MAX_BODY:,} characters).")
+    elif "\x00" in body:
+        errors.append("The message contains characters that cannot be sent.")
+    names = find_variables(subject, body)
+    odd = [t for t in leftover_placeholders(subject, body) if not _VAR.fullmatch(t)]
+    if odd:
+        errors.append(f"Placeholders look like {{{{first_name}}}}: lowercase letters, digits and underscores, starting with a letter. Not valid: {', '.join(odd[:3])}.")
+    if len(names) > MAX_VARIABLES:
+        errors.append(f"At most {MAX_VARIABLES} different placeholders per template.")
+    return {"name": name, "from_address": from_address, "subject": subject, "body": body}, errors
+
+
+def clean_value(value):
+    return _CONTROL.sub(" ", (value or "")).strip()
+
+
+def fill(text, values):
+    """Substitute placeholders in ONE pass. A value is plain text: it is never searched for placeholders itself, so it cannot
+    pull in another one, and everything is escaped later like any other text."""
+    return _VAR.sub(lambda m: values[m.group(1)], text)
+
+
+def check_values(names, values):
+    errors = []
+    for n in names:
+        v = values.get(n, "")
+        if not v:
+            errors.append(f"Fill in {n}.")
+        elif len(v) > MAX_VALUE:
+            errors.append(f"{n} is too long (at most {MAX_VALUE} characters).")
+        elif "{{" in v or "}}" in v:
+            errors.append(f"{n} cannot contain double braces.")
+    return errors
+
+
+def can_edit_template(user, template):
+    from apps.core.rbac import has_capability
+    return template.created_by == user.email or has_capability(user, "manage_templates")
 
 
 class SendError(Exception):
@@ -154,6 +243,11 @@ def prepare(draft, region=None):
         p.errors.append(f"The message is too long (at most {settings.SEND_MAX_BODY:,} characters).")
     elif "\x00" in p.text:
         p.errors.append("The message contains characters that cannot be sent.")
+
+    left = leftover_placeholders(p.subject, p.text)
+    if left:
+        p.errors.append(f"Fill in or remove {', '.join(left[:3])}" + (" and more" if len(left) > 3 else "")
+                        + " before sending. Text in double braces is treated as an unfilled placeholder.")
 
     if everyone:
         blocked = SuppressionEntry.objects.filter(address_lower__in=everyone, **({"region": region} if region else {})).values_list("address", flat=True)
