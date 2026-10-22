@@ -139,6 +139,8 @@ def test_html_is_escaped_paragraphed_and_links_only_for_http_and_https():
     assert '<a href="https://ex.com/a?b=1&amp;c=2">https://ex.com/a?b=1&amp;c=2</a>.' in h        # trailing full stop is not part of the link
     assert 'href="javascript' not in h and "<a " in h and h.count("<a ") == 1
     assert '"><img' not in service.render_html('https://x.com/"><img src=x onerror=alert(1)>')
+    before = service.render_html("<img src=x onerror=alert(1)> look at https://ex.com <b>now</b>")        # markup BEFORE and AFTER a link
+    assert "<img" not in before and "<b>" not in before and "&lt;img" in before and "&lt;b&gt;" in before
 
 
 # ---------------------------------------------------------------- sending
