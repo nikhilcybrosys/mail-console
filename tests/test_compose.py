@@ -26,7 +26,7 @@ def on(settings):
     settings.SEND_CONFIG_SET, settings.AWS_SEND_ROLE_ARN = "mc-set", "arn:aws:iam::123456789012:role/mail-console-send"
     settings.SEND_DEFAULT_REPLY_TO = "support@corp.example"
     settings.SEND_MAX_RECIPIENTS, settings.SEND_PER_USER_PER_HOUR, settings.SEND_PER_USER_PER_DAY, settings.SEND_PER_DAY = 5, 10, 20, 30
-    SenderAddress.objects.create(address=FROM, enabled=True, display_name="Horilla")
+    SenderAddress.objects.create(address=FROM, enabled=True, display_name="Acme")
     SenderAddress.objects.create(address="support@corp.example", enabled=False)
     return settings
 
@@ -148,7 +148,7 @@ def test_a_send_sends_exactly_what_was_previewed_and_records_it(ses):
     _, u = me()
     sent = go(u, draft(u, to_text="a@x.com", cc_text="b@x.com", bcc_text="c@x.com", body="Line one\n\nhttps://ex.com"))
     (call,) = ses.calls
-    assert call["from_address"] == f"Horilla <{FROM}>" and call["to"] == ["a@x.com"] and call["cc"] == ["b@x.com"] and call["bcc"] == ["c@x.com"]
+    assert call["from_address"] == f"Acme <{FROM}>" and call["to"] == ["a@x.com"] and call["cc"] == ["b@x.com"] and call["bcc"] == ["c@x.com"]
     assert call["reply_to"] == "support@corp.example" and call["config_set"] == "mc-set" and "https://ex.com" in call["html"] and call["text"].startswith("Line one")
     assert sent.ses_message_id == "0100abc-msg-1" and sent.recipient_count == 3 and sent.user_email == "d@example.com"
     assert not Draft.objects.exists()
@@ -327,7 +327,7 @@ def test_write_save_preview_and_send_through_the_pages(ses):
     assert r["Location"] == reverse("compose_preview", args=[d.pk])
     page = c.get(reverse("compose_preview", args=[d.pk])).content.decode()
     h = page.split('name="hash" value="')[1].split('"')[0]
-    assert "Body text" in page and f"Horilla &lt;{FROM}&gt;" in page
+    assert "Body text" in page and f"Acme &lt;{FROM}&gt;" in page
     assert c.post(reverse("compose_send", args=[d.pk]), {"hash": h}).status_code == 302
     assert len(ses.calls) == 1 and SentMail.objects.get().subject == "Hi"
     assert "0100abc-msg-1" in c.get(reverse("compose")).content.decode()
@@ -385,13 +385,13 @@ def test_releasing_an_unknown_draft_needs_a_passkey_is_audited_and_only_applies_
 # ---------------------------------------------------------------- sending addresses
 def test_security_admin_edits_addresses_with_a_passkey_and_it_is_audited(on):
     c, _ = me(SECURITY_ADMIN, "s@example.com")
-    posted = {"enabled_0": "on", "name_0": 'Horilla <script>"', "reply_0": "Help@Corp.example", "name_1": "Support", "enabled_1": "on"}
+    posted = {"enabled_0": "on", "name_0": 'Acme <script>"', "reply_0": "Help@Corp.example", "name_1": "Support", "enabled_1": "on"}
     SenderAddress.objects.get(address="support@corp.example").delete()
     SenderAddress.objects.create(address="support@corp.example")
     r = c.post(reverse("compose_senders"), posted)
     assert r.status_code == 302
     row = SenderAddress.objects.get(address=FROM)
-    assert row.enabled and row.display_name == "Horilla script" and row.reply_to == "help@corp.example" and row.updated_by == "s@example.com"
+    assert row.enabled and row.display_name == "Acme script" and row.reply_to == "help@corp.example" and row.updated_by == "s@example.com"
     a = AuditLog.objects.get(action="compose.senders_updated")
     assert FROM in a.details["changes"]
     c2, _ = me(SECURITY_ADMIN, "s2@example.com", step_up=False)

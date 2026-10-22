@@ -9,7 +9,7 @@
   {% for r in rows %}<tr>
     <td class="mono cell-primary">{{ r.address }}</td>
     <td><input type="checkbox" name="enabled_{{ forloop.counter0 }}" {% if r.enabled %}checked{% endif %} aria-label="{% blocktrans with a=r.address %}Allow sending as {{ a }}{% endblocktrans %}"></td>
-    <td><input class="input" name="name_{{ forloop.counter0 }}" maxlength="60" value="{{ r.display_name }}" placeholder="{% trans 'e.g. Horilla' %}" aria-label="{% trans 'Display name' %}"></td>
+    <td><input class="input" name="name_{{ forloop.counter0 }}" maxlength="60" value="{{ r.display_name }}" placeholder="{% trans 'e.g. Acme' %}" aria-label="{% trans 'Display name' %}"></td>
     <td><input class="input" name="reply_{{ forloop.counter0 }}" maxlength="254" value="{{ r.reply_to }}" placeholder="{{ default_reply|default:'' }}" aria-label="{% trans 'Reply-To' %}"></td>
   </tr>{% empty %}<tr><td colspan="4" class="muted">{% trans "MC_SEND_FROM_ADDRESSES is empty." %}</td></tr>{% endfor %}</tbody></table>
   <div class="card-body stack"><p class="muted">{% trans "Leave Replies go to empty to use the default shown in grey. Saving asks for your passkey, and every change is recorded in the audit log." %}</p>
