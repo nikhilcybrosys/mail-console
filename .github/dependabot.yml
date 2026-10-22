@@ -4,6 +4,10 @@ updates:
     directory: /
     schedule: {interval: weekly}
     open-pull-requests-limit: 5
+    ignore:
+      # Stay on Django 5.2 LTS until a deliberate upgrade; security and minor releases within 5.2 still arrive.
+      - dependency-name: "django"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: /
     schedule: {interval: weekly}
