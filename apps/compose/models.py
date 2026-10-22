@@ -10,6 +10,9 @@ class SenderAddress(models.Model):
     display_name = models.CharField(max_length=60, blank=True)
     reply_to = models.CharField(max_length=254, blank=True)
     enabled = models.BooleanField(default=False)
+    # Optional ceiling on recipients per rolling 24 hours for this From address, for everyone together (on top of the
+    # per-person and everyone limits). Null = no limit of its own.
+    daily_limit = models.PositiveIntegerField(null=True, blank=True)
     updated_by = models.CharField(max_length=254, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 

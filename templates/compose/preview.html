@@ -20,6 +20,7 @@
       <form class="card-body stack" method="post" action="{% url 'compose_send' d.pk %}" data-confirm="{% blocktrans with n=n %}Send this message to {{ n }} recipient(s) now?{% endblocktrans %}" data-confirm-label="{% trans 'Send now' %}">{% csrf_token %}
         <input type="hidden" name="hash" value="{{ hash }}">
         <p class="muted">{% blocktrans with n=n h=limits.hour_left %}{{ n }} recipient(s). You have {{ h }} left this hour.{% endblocktrans %}</p>
+        {% if addr_left != None %}<p class="muted">{% blocktrans with a=p.from_address l=addr_left %}{{ a }} has a daily limit: {{ l }} recipients left in the last 24 hours.{% endblocktrans %}</p>{% endif %}
         <div class="btn-group"><button class="btn btn-primary" type="submit">{% icon "send" %}<span>{% trans "Send now" %}</span></button><a class="btn" href="{% url 'compose_edit' d.pk %}">{% trans "Edit" %}</a></div>
       </form></section>
   </div>

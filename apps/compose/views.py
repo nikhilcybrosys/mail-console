@@ -104,7 +104,8 @@ def preview(request, pk):
         messages.error(request, p.errors[0])
         return redirect("compose_edit", pk=draft.pk)
     return render(request, "compose/preview.html", {
-        "d": draft, "p": p, "hash": service.content_hash(p), "n": len(p.recipients), "limits": service.limits(request.user.email)})
+        "d": draft, "p": p, "hash": service.content_hash(p), "n": len(p.recipients), "limits": service.limits(request.user.email),
+        "addr_left": service.address_left(p.from_address)})
 
 
 @compose_view(step_up=True)
@@ -166,9 +167,17 @@ def senders(request):
                     errors.append(f"{row.address}: Reply-To must be one valid address.")
                     continue
                 reply = parsed[0].lower()
-            if (row.enabled, row.display_name, row.reply_to) != (enabled, name, reply):
-                changes[row.address] = {"enabled": [row.enabled, enabled], "display_name": [row.display_name, name], "reply_to": [row.reply_to, reply]}
-                row.enabled, row.display_name, row.reply_to, row.updated_by = enabled, name, reply, request.user.email
+            raw_limit = (request.POST.get(f"limit_{i}", "")).strip()
+            limit = None
+            if raw_limit:
+                if not raw_limit.isdigit() or not 1 <= int(raw_limit) <= settings.SEND_PER_DAY:
+                    errors.append(f"{row.address}: the daily limit must be a whole number from 1 to {settings.SEND_PER_DAY}, or empty for none.")
+                    continue
+                limit = int(raw_limit)
+            if (row.enabled, row.display_name, row.reply_to, row.daily_limit) != (enabled, name, reply, limit):
+                changes[row.address] = {"enabled": [row.enabled, enabled], "display_name": [row.display_name, name], "reply_to": [row.reply_to, reply],
+                                        "daily_limit": [row.daily_limit, limit]}
+                row.enabled, row.display_name, row.reply_to, row.daily_limit, row.updated_by = enabled, name, reply, limit, request.user.email
         if not errors:
             for row in rows:
                 if row.address in changes:

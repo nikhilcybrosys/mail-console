@@ -298,7 +298,18 @@ def limits(user_email, now=None):
             "all_left": max(settings.SEND_PER_DAY - u["all_day"], 0)}
 
 
-def check_limits(user_email, n, now=None):
+def address_left(from_address, now=None):
+    """Recipients this From address may still be sent to in the next window, or None if it has no limit of its own."""
+    addr = (from_address or "").lower()
+    row = SenderAddress.objects.filter(address=addr).only("daily_limit").first()
+    if row is None or row.daily_limit is None:
+        return None
+    now = now or timezone.now()
+    used = SentMail.objects.filter(from_address=addr, sent_at__gte=now - timedelta(hours=24)).aggregate(n=Sum("recipient_count"))["n"] or 0
+    return max(row.daily_limit - used, 0)
+
+
+def check_limits(user_email, n, now=None, from_address=None):
     left = limits(user_email, now)
     if n > left["hour_left"]:
         raise SendError(f"That would pass your hourly limit of {settings.SEND_PER_USER_PER_HOUR} recipients ({left['hour_left']} left). Try again later.")
@@ -306,6 +317,9 @@ def check_limits(user_email, n, now=None):
         raise SendError(f"That would pass your daily limit of {settings.SEND_PER_USER_PER_DAY} recipients ({left['day_left']} left).")
     if n > left["all_left"]:
         raise SendError(f"The daily limit for everyone ({settings.SEND_PER_DAY} recipients) would be passed ({left['all_left']} left).")
+    addr_left = address_left(from_address, now) if from_address else None
+    if addr_left is not None and n > addr_left:
+        raise SendError(f"{from_address} has a daily limit that would be passed ({addr_left} recipients left in the last 24 hours).")
 
 
 # ---------------------------------------------------------------- drafts
@@ -347,7 +361,7 @@ def send(user, draft_id, expected_hash, region, request=None):
             raise SendError(p.errors[0])
         if content_hash(p) != expected_hash:
             raise SendError("The message changed after you previewed it. Preview it again before sending.")
-        check_limits(user.email, len(p.recipients))
+        check_limits(user.email, len(p.recipients), from_address=p.from_address)
         d.state = Draft.SENDING
         d.save(update_fields=["state", "updated_at"])  # the row lock is released at the end of this block; the state keeps a second send out
 
