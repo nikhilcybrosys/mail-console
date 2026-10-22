@@ -28,7 +28,7 @@ the approval and audit mechanisms, sign-in and passkey handling, the Docker imag
 Particularly interesting to me:
 - anything that makes untrusted email content execute script, load remote resources or escape the sandboxed viewer;
 - bypassing role checks, domain scoping, the passkey step-up or the four-eyes approval flow;
-- anything that lets a console role send mail or make an unapproved SES change;
+- anything that lets a console role send mail (other than through the opt-in Compose send role, within the limits documented in `aws/README.md` section 8) or make an unapproved SES change;
 - tampering with, or hiding entries in, the audit log;
 - authentication bypass, account takeover or session weaknesses in the sign-in flow;
 - SQL injection, SSRF, path traversal, or secrets exposed in logs, errors or the image.

@@ -17,7 +17,7 @@ toolchain.
 - **Alerts:** DNS problems, enforcement or sending paused, and no events arriving.
 - **Safe changes:** every change to SES asks for a passkey, and risky ones (bulk suppression removal, pausing sending,
   identity and event-destination changes) also need a second person to approve. Changes run with narrowly scoped AWS
-  roles that can never send mail.
+  roles that can never send mail (Compose, below, is an opt-in exception with its own narrow role).
 - **Tamper-evident audit log:** every sign-in, change and message-body view, hash-chained so edits show.
 
 <p align="center">
@@ -40,7 +40,7 @@ and is bound to `127.0.0.1`: it is for looking around, never for a real deployme
 
 ## Connect it to your AWS account
 `aws/README.md` has the few CLI commands and the IAM policy files you need: an SNS topic and SQS queue that receive SES
-events, and three roles (read-only, plus two narrow write roles) that can never send mail. There is no hosting stack to
+events, and three roles (read-only, plus two narrow write roles) that can never send mail (plus an optional send role for Compose, `aws/README.md` section 8). There is no hosting stack to
 apply: run the container on any small server. The steps have been applied to a real production account and checked there.
 
 ## Local development
@@ -74,6 +74,22 @@ Any OpenID Connect provider with a discovery URL works (Google, Okta, Microsoft 
 - **Strict claims.** `email_verified` must be true. Microsoft Entra does not send it by default, so sign-in fails closed
   until you configure it. Use a tenant-specific discovery URL: multi-tenant endpoints (templated issuer) are refused.
 - Changes to SES additionally ask for a passkey.
+
+## Compose (optional)
+Write and send a one-off message from an address you own, without leaving the console. Off unless `MC_SEND_ENABLED=1` (setup in
+`aws/README.md`, section 8). It is for one-off mail, not campaigns: no lists, no attachments, no scheduling.
+
+- **Who and from where:** deliverability and security admins. Each address must be in `MC_SEND_FROM_ADDRESSES`, allowed by the
+  AWS send role, and switched on by a security admin under Sending addresses.
+- **Every send needs a passkey**, is attributed to the person in the audit log and in AWS CloudTrail, and goes through your
+  configuration set so it appears in Sent mail with its delivery timeline. The audit log records who, from, how many and the
+  message id, never the body.
+- **Guardrails:** per-message, per-person and per-day recipient limits; recipients on the SES suppression list are refused; line
+  breaks in addresses or subjects are refused; what is sent is exactly what was previewed; a draft can only be sent once.
+- **If AWS gives no clear answer** (a timeout), the message is marked "may have been sent" and is not offered for re-sending until
+  someone checks Sent mail and says it did not go out. The send client never retries automatically, so a lost response cannot
+  mail the same message twice.
+- Plain text only. The HTML part is the same text, escaped, with `http(s)` links made clickable.
 
 ## Alerts
 Alerts always appear on the Alerts page. To get them elsewhere, set a channel (https only):
