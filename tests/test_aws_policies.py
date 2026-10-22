@@ -25,7 +25,8 @@ spec.loader.exec_module(render)
 SEND_ACTIONS = ["ses:SendEmail", "ses:SendBulkEmail", "ses:SendRawEmail", "ses:SendCustomVerificationEmail",
                 "ses:SendTemplatedEmail", "ses:SendBulkTemplatedEmail", "ses:SendBounce"]
 IDENTITY_POLICIES = ["console-read.json", "write-ops.json", "write-security.json"]
-DOCUMENTED = {"__EXTERNAL_ID__", "__ACCOUNT_ID__", "__REGION__", "__ALLOWED_EMAILS__", "__TOPIC_ARN__", "__QUEUE_ARN__", "__APP_ROLE_ARN__", "__SERVICE_PRINCIPAL__"}
+DOCUMENTED = {"__EXTERNAL_ID__", "__ACCOUNT_ID__", "__REGION__", "__ALLOWED_EMAILS__", "__TOPIC_ARN__", "__QUEUE_ARN__", "__APP_ROLE_ARN__", "__SERVICE_PRINCIPAL__",
+              "__SEND_EMAILS__", "__SEND_FROM__", "__SEND_RESOURCES__", "__SEND_CONFIG_SET__"}
 VALUES = dict(account_id="123456789012", region="ap-south-1", allowed_email=["ann@corp.example", "bob@corp.example"],
               topic_arn="arn:aws:sns:ap-south-1:123456789012:mail-console-ses-events",
               queue_arn="arn:aws:sqs:ap-south-1:123456789012:mail-console-events", service_principal="ec2.amazonaws.com", external_id="x" * 32)
@@ -65,7 +66,7 @@ def test_policy_is_valid_and_uses_only_documented_placeholders(path):
 def test_render_fills_everything_and_rejects_bad_input(tmp_path):
     args = render.argparse.Namespace(**VALUES)
     files = render.render(render.build_values(args))
-    assert set(files) >= {p.name for p in POLICIES.glob("*.json")} | {"sqs-queue-attributes.json"}
+    assert set(files) == {p.name for p in POLICIES.glob("*.json")} - render.SEND_FILES | {"sqs-queue-attributes.json"}  # sending is opt-in
     for text in files.values():
         assert not re.search(r"__[A-Z_]+__", text) and json.loads(text)
     assert json.loads(files["sqs-queue-attributes.json"])["Policy"]  # a JSON string, as the AWS CLI expects

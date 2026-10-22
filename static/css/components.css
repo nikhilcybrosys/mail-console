@@ -170,3 +170,6 @@ th[aria-sort="ascending"] .sort .icon,th[aria-sort="descending"] .sort .icon{opa
 .chip-view button:hover{color:var(--text)}
 .save-view summary{list-style:none;cursor:pointer}.save-view summary::-webkit-details-marker{display:none}
 .save-view form{display:flex;gap:8px;margin-top:8px}
+
+/* Compose preview: the message exactly as written, wrapped, never interpreted */
+.preview-text{margin:0;padding:12px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-md);white-space:pre-wrap;word-break:break-word;font-family:var(--font-sans);font-size:var(--fs-md)}

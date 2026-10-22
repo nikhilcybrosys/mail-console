@@ -1,0 +1,19 @@
+{% extends "base.html" %}{% load i18n ui %}
+{% block title %}{% trans "Sending addresses" %}{% endblock %}
+{% block crumbs %}<a href="{% url 'compose' %}">{% trans "Compose" %}</a> / <span aria-current="page">{% trans "Sending addresses" %}</span>{% endblock %}
+{% block content %}
+<div class="ph"><div><h1>{% trans "Sending addresses" %}</h1><p>{% trans "Which addresses Compose may send as. An address can only be switched on if it is in MC_SEND_FROM_ADDRESSES and allowed by the AWS send role. Adding a new address needs both changed (see aws/README.md)." %}</p></div></div>
+{% if errors %}<div class="callout callout-err" role="alert">{% icon "circle-alert" %}<div><ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul></div></div><br>{% endif %}
+<form method="post" class="card">{% csrf_token %}
+  <table class="table"><thead><tr><th>{% trans "Address" %}</th><th>{% trans "On" %}</th><th>{% trans "Display name" %}</th><th>{% trans "Replies go to" %}</th></tr></thead><tbody>
+  {% for r in rows %}<tr>
+    <td class="mono cell-primary">{{ r.address }}</td>
+    <td><input type="checkbox" name="enabled_{{ forloop.counter0 }}" {% if r.enabled %}checked{% endif %} aria-label="{% blocktrans with a=r.address %}Allow sending as {{ a }}{% endblocktrans %}"></td>
+    <td><input class="input" name="name_{{ forloop.counter0 }}" maxlength="60" value="{{ r.display_name }}" placeholder="{% trans 'e.g. Horilla' %}" aria-label="{% trans 'Display name' %}"></td>
+    <td><input class="input" name="reply_{{ forloop.counter0 }}" maxlength="254" value="{{ r.reply_to }}" placeholder="{{ default_reply|default:'' }}" aria-label="{% trans 'Reply-To' %}"></td>
+  </tr>{% empty %}<tr><td colspan="4" class="muted">{% trans "MC_SEND_FROM_ADDRESSES is empty." %}</td></tr>{% endfor %}</tbody></table>
+  <div class="card-body stack"><p class="muted">{% trans "Leave Replies go to empty to use the default shown in grey. Saving asks for your passkey, and every change is recorded in the audit log." %}</p>
+  <div><button class="btn btn-primary" type="submit">{% trans "Save" %}</button></div></div>
+</form>
+{% if gone %}<br><section class="card"><div class="card-head"><div class="card-title">{% trans "No longer in the environment" %}</div></div><div class="card-body muted">{% trans "These cannot send: they were removed from MC_SEND_FROM_ADDRESSES." %} {% for g in gone %}<span class="mono">{{ g.address }}</span>{% if not forloop.last %}, {% endif %}{% endfor %}</div></section>{% endif %}
+{% endblock %}

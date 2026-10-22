@@ -192,6 +192,32 @@ class SesWriter:
         self.c.delete_email_template(TemplateName=name)
 
 
+class SesSender:
+    """Can send ONE message at a time and nothing else: there is deliberately no bulk, raw or templated send here.
+
+    Built from credentials of the separate send role (see `assume_sender`), whose AWS policy allows only ses:SendEmail,
+    only from listed addresses and only for named people.
+    """
+
+    def __init__(self, client):
+        self.c = client
+
+    def send(self, *, from_address, to, cc, bcc, reply_to, subject, text, html, config_set):
+        dest = {"ToAddresses": list(to)}
+        if cc:
+            dest["CcAddresses"] = list(cc)
+        if bcc:
+            dest["BccAddresses"] = list(bcc)
+        kwargs = dict(
+            FromEmailAddress=from_address, Destination=dest, ConfigurationSetName=config_set,
+            Content={"Simple": {"Subject": {"Data": subject, "Charset": "UTF-8"},
+                                "Body": {"Text": {"Data": text, "Charset": "UTF-8"}, "Html": {"Data": html, "Charset": "UTF-8"}}}},
+            EmailTags=[{"Name": "mc-app", "Value": "compose"}])  # shows as the app in Sent mail
+        if reply_to:
+            kwargs["ReplyToAddresses"] = [reply_to]
+        return self.c.send_email(**kwargs)["MessageId"]
+
+
 TIERS = {"ops": "AWS_WRITE_ROLE_OPS_ARN", "security": "AWS_WRITE_ROLE_SECURITY_ARN"}
 
 
@@ -216,3 +242,25 @@ def assume_writer(region, tier, acting_email, request_id):
         aws_secret_access_key=c["SecretAccessKey"], aws_session_token=c["SessionToken"],
     )
     return SesWriter(client)
+
+
+def assume_sender(region, acting_email, request_id):
+    """STS-assume the SEND role for one message, attributed to a person via SourceIdentity (and the shared ExternalId).
+
+    The send client does not retry: SES has no idempotency token, so an automatic retry after a lost response could mail
+    the same message twice. A lost response is surfaced to the caller instead, who must check Sent mail before resending.
+    """
+    from botocore.config import Config
+
+    role_arn = settings.AWS_SEND_ROLE_ARN
+    if not role_arn:
+        raise RuntimeError("No send role configured")
+    kwargs = dict(RoleArn=role_arn, RoleSessionName=f"mc-send-{request_id}"[:64], SourceIdentity=acting_email,
+                  DurationSeconds=settings.AWS_ASSUME_SESSION_SECONDS)
+    if settings.AWS_WRITE_ROLE_EXTERNAL_ID:
+        kwargs["ExternalId"] = settings.AWS_WRITE_ROLE_EXTERNAL_ID
+    c = boto3.client("sts").assume_role(**kwargs)["Credentials"]
+    client = boto3.client(
+        "sesv2", region_name=region, aws_access_key_id=c["AccessKeyId"], aws_secret_access_key=c["SecretAccessKey"],
+        aws_session_token=c["SessionToken"], config=Config(retries={"mode": "standard", "max_attempts": 1}, connect_timeout=5, read_timeout=20))
+    return SesSender(client)

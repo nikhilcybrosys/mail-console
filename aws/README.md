@@ -7,7 +7,7 @@ infrastructure-as-code to apply and no hosting stack: run the console wherever y
 SES  ->  configuration set  ->  SNS topic  ->  SQS queue (+ dead-letter queue)  ->  console worker  ->  database
 ```
 
-and three IAM roles, all capped by a permissions boundary, **none of which can send mail**:
+and three IAM roles, all capped by a permissions boundary, **none of which can send mail** (an optional fourth role for hand-written mail, section 8, is the only exception and is off unless you create it):
 
 | Role | What it can do |
 |---|---|
@@ -211,6 +211,47 @@ person, so add a second context entry such as `ContextKeyName=aws:SourceIdentity
 
 The simulator does not set `aws:RequestedRegion` or `aws:SourceIdentity` for you. Without them it reports the region
 guard as `explicitDeny` even for allowed read calls, which looks like a bug but is the simulator missing context.
+
+## 8. Compose (optional): send one-off mail from the console
+Off by default. Nothing below exists in AWS unless you do it, and the three roles above are unchanged and still cannot send.
+
+Compose adds one more role, `mail-console-send`. IAM enforces **who** (only the people you list, through the app role and the
+shared secret), **as which address** (`ses:FromAddress`, exact addresses), **on which identities and configuration set**, and
+**in one region**. All other send actions are explicitly denied. What IAM cannot do: under SESv2, raw and templated content
+travel through the same `ses:SendEmail` permission, so IAM cannot allow "simple" and forbid "raw". The console only ever builds
+simple content (its sender object has no other method, and a test pins that). A configuration set cannot be *required* by IAM
+either; the role may use only the one you name, and SES applies the identity's default set when none is named, so give your
+identities that set as their default (step 5).
+
+Render with three more options, then create the role:
+
+```bash
+python3 aws/render.py ... --send-email you@example.com --send-from notifications@example.com --send-from support@example.com \
+  --send-config-set my-first-configuration-set
+
+SEND_BOUNDARY_ARN=$(aws iam create-policy --policy-name mail-console-send-boundary \
+  --policy-document file://aws-rendered/permissions-boundary-send.json --query Policy.Arn --output text)
+aws iam create-role --role-name mail-console-send --permissions-boundary "$SEND_BOUNDARY_ARN" \
+  --assume-role-policy-document file://aws-rendered/trust-send-role.json
+aws iam put-role-policy --role-name mail-console-send --policy-name send --policy-document file://aws-rendered/send.json
+aws iam put-role-policy --role-name mail-console-app --policy-name assume-send --policy-document file://aws-rendered/app-assume-send.json
+```
+
+Then set, in the console's environment:
+
+| Variable | Value |
+|---|---|
+| `MC_SEND_ENABLED` | `1` |
+| `MC_SEND_FROM_ADDRESSES` | the same addresses you gave `--send-from`, comma separated (the most the console will ever offer) |
+| `MC_SEND_CONFIG_SET` | the configuration set from `--send-config-set` |
+| `MC_AWS_SEND_ROLE_ARN` | `arn:aws:iam::<account>:role/mail-console-send` |
+| `MC_SEND_DEFAULT_REPLY_TO` | optional: where replies go when an address has no Reply-To of its own |
+| `MC_SEND_MAX_RECIPIENTS`, `MC_SEND_PER_USER_PER_HOUR`, `_PER_USER_PER_DAY`, `MC_SEND_PER_DAY` | optional limits (defaults 10, 20, 100, 300 recipients) |
+
+In the console, a security admin switches each address on under **Compose, Sending addresses** (they start off), and can set a
+display name and Reply-To. Run **Setup check, Test write roles** to prove the send role can be assumed (it sends nothing).
+To allow a new address: add it to `--send-from`, re-render and run the last two `put-role-policy` commands again, and add it to
+`MC_SEND_FROM_ADDRESSES`. The console cannot widen the AWS policy, so a new address in the environment alone does not work.
 
 ## Changing or removing things
 Remove the SES event destination before deleting the topic, and delete the subscription before the queue. Delete the
