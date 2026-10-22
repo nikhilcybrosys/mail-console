@@ -75,9 +75,13 @@ def top_bounce_reasons(hours=168, limit=8, now=None):
     return [{"type": r["payload__bounce__bounceType"], "subtype": r["payload__bounce__bounceSubType"], "count": r["n"]} for r in rows]
 
 
-def by_app(hours=168, now=None):
+def by_app(hours=168, now=None, scope_domains=None):
+    """Busiest sender apps. A scoped user sees only apps (and domains) of their own From-domains, as on the message list."""
     now = now or timezone.now()
-    return list(Message.objects.filter(sent_at__gte=now - timedelta(hours=hours)).values("source_app", "from_domain")
+    qs = Message.objects.filter(sent_at__gte=now - timedelta(hours=hours))
+    if scope_domains:
+        qs = qs.filter(from_domain__in=[d.lower() for d in scope_domains])
+    return list(qs.values("source_app", "from_domain")
                 .annotate(n=Count("id"), bad=Count("id", filter=Q(final_state__in=["bounce", "complaint"]))).order_by("-n")[:10])
 
 

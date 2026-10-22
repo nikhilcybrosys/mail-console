@@ -123,3 +123,11 @@ def test_the_price_setting_is_validated_at_startup():
         code, err = _import_settings(MC_SES_PRICE_PER_1000=bad)
         assert code != 0 and "MC_SES_PRICE_PER_1000" in err, bad
     assert _import_settings(MC_SES_PRICE_PER_1000="0.10")[0] == 0 and _import_settings(MC_SES_PRICE_PER_1000="0")[0] == 0
+
+
+def test_top_senders_no_longer_lists_other_domains_apps_to_a_scoped_user():
+    """Found by the scoped-overview test: this older table was not scoped like the message list is."""
+    mail(from_domain="example.com", app="mine", hours_ago=1, now=datetime.now(timezone.utc))
+    mail(from_domain="other-brand.com", app="secret-app", hours_ago=1, now=datetime.now(timezone.utc))
+    assert {r["source_app"] for r in metrics.by_app(168, scope_domains=["example.com"])} == {"mine"}
+    assert {r["source_app"] for r in metrics.by_app(168)} == {"mine", "secret-app"}

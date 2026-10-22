@@ -119,10 +119,10 @@ def dashboard(request):
         if n:
             attention.append({"tone": "info", "icon": "shield-check", "text": f"{n} approval{'s' if n != 1 else ''} waiting for review", "url": reverse("approvals"), "cta": "Open queue"})
     return render(request, "console/dashboard.html", {
-        "snap": snap, "window": win, "tiles": tiles, "chart": chart, "meters": meters, "reasons": reasons, "apps": metrics.by_app(hours),
+        "snap": snap, "window": win, "tiles": tiles, "chart": chart, "meters": meters, "reasons": reasons, "apps": metrics.by_app(hours, scope_domains=request.user.scope_domains),
         "recipients": metrics.by_provider(hours, scope_domains=request.user.scope_domains),
         "spend": {"window": metrics.cost_by_app(timezone.now() - timedelta(hours=hours), scope_domains=request.user.scope_domains),
-                  "month": metrics.cost_by_app(metrics.month_start(), scope_domains=request.user.scope_domains, top=0), "price": settings.SES_PRICE_PER_1000},
+                  "month": metrics.cost_by_app(metrics.month_start(), scope_domains=request.user.scope_domains, top=0), "price": f"{settings.SES_PRICE_PER_1000:.2f}" if settings.SES_PRICE_PER_1000 >= 0.01 or settings.SES_PRICE_PER_1000 == 0 else f"{settings.SES_PRICE_PER_1000:g}"},
         "attention": attention, "quota_pct": round(100 * snap.sent_last_24h / snap.max_24h_send, 1) if snap and snap.max_24h_send else 0,
         "sample": rep["sample"], "last_event": max([v for v in metrics.last_event_by_config_set().values() if v] or [None]) if Message.objects.exists() else None,
     })
