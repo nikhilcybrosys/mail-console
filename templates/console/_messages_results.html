@@ -1,0 +1,32 @@
+{% load i18n ui %}
+<nav class="tabs" aria-label="{% trans 'Filter by status' %}">
+  {% for t in tabs %}<a class="tab" href="{{ t.url }}" hx-get="{{ t.url }}" hx-target="#results" hx-push-url="true" {% if t.active %}aria-current="page"{% endif %}>{{ t.label }}<span class="count num">{{ t.count }}</span></a>{% endfor %}
+</nav>
+{% if chips %}<div class="chips" aria-label="{% trans 'Active filters' %}">{% for c in chips %}<span class="chip">{{ c.label }}: <b>{{ c.value }}</b><a href="{{ c.url }}" hx-get="{{ c.url }}" hx-target="#results" hx-push-url="true" aria-label="{% trans 'Remove filter' %}">{% icon "x" "icon-sm" %}</a></span>{% endfor %}</div>{% endif %}
+<div class="table-wrap">
+{% if page.object_list %}
+<table class="table" data-kbd>
+  <thead><tr>
+    <th aria-sort="{% sort_state "sent_at" %}">{% sort_link _("Sent") "sent_at" %}</th><th>{% trans "Recipient" %}</th><th aria-sort="{% sort_state "subject" %}">{% sort_link _("Subject") "subject" %}</th><th aria-sort="{% sort_state "app" %}">{% sort_link _("App") "app" %}</th><th aria-sort="{% sort_state "state" %}">{% sort_link _("Status") "state" %}</th>
+  </tr></thead>
+  <tbody>
+  {% for m in page %}{% with rs=m.recipients.all %}
+  <tr data-id="{{ m.pk }}" data-drawer-url="{% url 'message_drawer' m.pk %}" tabindex="-1" {% if open_id == m.pk|stringformat:"s" %}class="is-active"{% endif %}>
+    <td class="muted">{% ago m.sent_at %}</td>
+    <td class="mono">{{ rs.0.address|default:"—" }}{% if rs|length > 1 %} <span class="muted">+{{ rs|length|add:"-1" }}</span>{% endif %}</td>
+    <td><a class="cell-primary" href="{% url 'message_detail' m.pk %}" data-drawer-url="{% url 'message_drawer' m.pk %}" data-id="{{ m.pk }}">{{ m.subject|default:_("(no subject)") }}</a></td>
+    <td>{{ m.source_app|default:"—" }}</td>
+    <td>{% state_badge m.final_state %}</td>
+  </tr>{% endwith %}{% endfor %}
+  </tbody>
+</table>
+<div class="table-foot">
+  <span class="num">{% blocktrans with a=page.start_index b=page.end_index n=page.paginator.count %}Showing {{ a }}–{{ b }} of {{ n }}{% endblocktrans %}</span><span class="spacer"></span>
+  {% if page.has_previous %}{% qs_with page=page.previous_page_number as prev %}<a class="btn btn-sm" href="{{ prev }}" hx-get="{{ prev }}" hx-target="#results" hx-push-url="true">{% trans "Previous" %}</a>{% endif %}
+  {% if page.has_next %}{% qs_with page=page.next_page_number as nxt %}<a class="btn btn-sm" href="{{ nxt }}" hx-get="{{ nxt }}" hx-target="#results" hx-push-url="true">{% trans "Next" %}</a>{% endif %}
+</div>
+{% else %}
+  {% if chips %}{% include "components/_empty.html" with icon="search" title=_("No messages match these filters") text=_("Try removing a filter or widening the time range.") action_url=request.path action_label=_("Clear filters") %}
+  {% else %}{% include "components/_empty.html" with icon="mail" title=_("No mail recorded yet") text=_("Events appear here once SES publishes them to the event pipeline. Check Event pipeline to confirm a configuration set has a destination.") action_url="/config-sets/" action_label=_("Open event pipeline") %}{% endif %}
+{% endif %}
+</div>

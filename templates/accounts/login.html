@@ -1,0 +1,13 @@
+{% extends "base.html" %}{% load i18n ui static %}
+{% block title %}{% trans "Sign in" %}{% endblock %}
+{% block anon %}
+<div class="auth-wrap">
+  <main class="auth-panel" id="main"><div class="auth-card stack">
+    <div class="row"><img class="logo-light" src="{% static brand_logo %}" alt="" width="32" height="32"><img class="logo-dark" src="{% static brand_logo_dark %}" alt="" width="32" height="32"><strong>{{ brand_name }}</strong></div>
+    <div><h1 class="auth-title">{% trans "Sign in" %}</h1><p class="muted">{% trans "Use your organisation account. Changes to SES also ask for a passkey." %}</p></div>
+    <a class="btn btn-primary auth-btn" href="/oidc/start/?next={{ next|urlencode }}">{% blocktrans %}Continue with {{ oidc_provider }}{% endblocktrans %}</a>
+    {% if dev_login %}<div class="callout callout-warn"><div>{% icon "triangle-alert" %}</div><div><div class="callout-title">{% trans "Development sign-in is on" %}</div><p><code>/dev-login/?email=you@example.com</code></p></div></div>{% endif %}
+  </div></main>
+  <aside class="auth-brand" aria-hidden="true"><img src="{% static brand_logo_dark %}" alt="" width="44" height="44"><p>{% trans "See what happened to every email, and fix problems without opening the AWS console." %}</p></aside>
+</div>
+{% endblock %}

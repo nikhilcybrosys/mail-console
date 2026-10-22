@@ -1,0 +1,7 @@
+{% load ui i18n %}
+{% for title, items in groups %}
+  <div class="palette-group">{{ title }}</div>
+  {% for label, url, ic in items %}<a class="palette-item" role="option" href="{{ url }}">{% icon ic %}<span class="truncate">{{ label }}</span></a>{% endfor %}
+{% empty %}
+  <div class="empty"><p>{% trans "No matches. Try an email address, a message ID or a domain." %}</p></div>
+{% endfor %}

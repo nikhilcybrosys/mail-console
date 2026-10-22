@@ -1,0 +1,148 @@
+"""Aggregations for the dashboard. All read from our DB; reputation 'estimates' are labelled as such."""
+from datetime import timedelta
+
+from django.db.models import Count, Max, Q
+from django.utils import timezone
+
+from .events import SUPPRESSION_SUBTYPES
+from .models import Message, MessageEvent, MessageRecipient
+
+
+def funnel(hours=24, now=None, **filters):
+    now = now or timezone.now()
+    since = now - timedelta(hours=hours)
+    base = MessageRecipient.objects.filter(message__sent_at__gte=since, **filters)
+    total = base.count()
+    counts = dict(base.values_list("state").annotate(n=Count("id")).values_list("state", "n"))
+    return {"since": since, "sent": total, "delivered": counts.get("delivery", 0), "bounced": counts.get("bounce", 0),
+            "complained": counts.get("complaint", 0), "delayed": counts.get("deliverydelay", 0),
+            "rejected": counts.get("reject", 0) + counts.get("renderingfailure", 0), "in_flight": counts.get("send", 0)}
+
+
+def reputation_estimate(hours=24, now=None):
+    """ESTIMATE only. SES computes its own rates on an undisclosed volume; CloudWatch Reputation.* is authoritative.
+
+    Excludes suppression-driven bounces (they do not count toward SES reputation) and counts only
+    permanent bounces. Returns rates as fractions plus the sample size.
+    """
+    now = now or timezone.now()
+    since = now - timedelta(hours=hours)
+    sent = MessageEvent.objects.filter(event_type="send", event_ts__gte=since).count()
+    bounces = MessageEvent.objects.filter(event_type="bounce", event_ts__gte=since, payload__bounce__bounceType="Permanent") \
+        .exclude(payload__bounce__bounceSubType__in=list(SUPPRESSION_SUBTYPES)).count()
+    complaints = MessageEvent.objects.filter(event_type="complaint", event_ts__gte=since).count()
+    return {"sample": sent, "bounce_rate": bounces / sent if sent else 0.0, "complaint_rate": complaints / sent if sent else 0.0,
+            "bounces": bounces, "complaints": complaints}
+
+
+def top_bounce_reasons(hours=168, limit=8, now=None):
+    now = now or timezone.now()
+    qs = MessageEvent.objects.filter(event_type="bounce", event_ts__gte=now - timedelta(hours=hours))
+    rows = qs.values("payload__bounce__bounceType", "payload__bounce__bounceSubType").annotate(n=Count("id")).order_by("-n")[:limit]
+    return [{"type": r["payload__bounce__bounceType"], "subtype": r["payload__bounce__bounceSubType"], "count": r["n"]} for r in rows]
+
+
+def by_app(hours=168, now=None):
+    now = now or timezone.now()
+    return list(Message.objects.filter(sent_at__gte=now - timedelta(hours=hours)).values("source_app", "from_domain")
+                .annotate(n=Count("id"), bad=Count("id", filter=Q(final_state__in=["bounce", "complaint"]))).order_by("-n")[:10])
+
+
+def last_event_by_config_set():
+    return dict(Message.objects.values("config_set").annotate(m=Max("events__event_ts")).values_list("config_set", "m"))
+
+
+def hourly_series(hours=48, now=None):
+    from django.db.models.functions import TruncHour
+    now = now or timezone.now()
+    qs = MessageEvent.objects.filter(event_ts__gte=now - timedelta(hours=hours), event_type__in=["send", "delivery", "bounce", "complaint"]) \
+        .annotate(h=TruncHour("event_ts")).values("h", "event_type").annotate(n=Count("id")).order_by("h")
+    series = {}
+    for r in qs:
+        series.setdefault(r["h"].isoformat(), {})[r["event_type"]] = r["n"]
+    return series
+
+
+# ---- Dashboard v2 helpers -------------------------------------------------------------------
+def _floor(dt, step):
+    dt = dt.replace(minute=0, second=0, microsecond=0)
+    return dt.replace(hour=0) if step == "day" else dt
+
+
+def series(hours=24, now=None):
+    """Gap-filled time series of send/delivery/bounce/complaint counts.
+
+    Hourly buckets up to 7 days, daily buckets beyond. Returns {"x": [epoch seconds], "send": [...], ...}.
+    Bounces exclude suppression-driven ones (they do not count toward SES reputation).
+    """
+    from django.db.models.functions import TruncDay, TruncHour
+    now = now or timezone.now()
+    step = "day" if hours > 168 else "hour"
+    delta = timedelta(days=1) if step == "day" else timedelta(hours=1)
+    start = _floor(now - timedelta(hours=hours), step)
+    trunc = TruncDay if step == "day" else TruncHour
+    qs = MessageEvent.objects.filter(event_ts__gte=start, event_type__in=["send", "delivery", "bounce", "complaint"])
+    qs = qs.exclude(event_type="bounce", payload__bounce__bounceSubType__in=list(SUPPRESSION_SUBTYPES))
+    counts = {}
+    for r in qs.annotate(b=trunc("event_ts")).values("b", "event_type").annotate(n=Count("id")):
+        counts[(r["b"], r["event_type"])] = r["n"]
+    xs, out = [], {"send": [], "delivery": [], "bounce": [], "complaint": []}
+    t = start
+    while t <= now:
+        xs.append(int(t.timestamp()))
+        for k in out:
+            out[k].append(counts.get((t, k), 0))
+        t += delta
+    return {"x": xs, **out}
+
+
+def period_totals(start, end):
+    """Event totals in [start, end) for KPI tiles and deltas."""
+    qs = MessageEvent.objects.filter(event_ts__gte=start, event_ts__lt=end)
+    sent = qs.filter(event_type="send").count()
+    delivered = qs.filter(event_type="delivery").count()
+    bounced = qs.filter(event_type="bounce", payload__bounce__bounceType="Permanent") \
+        .exclude(payload__bounce__bounceSubType__in=list(SUPPRESSION_SUBTYPES)).count()
+    complained = qs.filter(event_type="complaint").count()
+    rate = lambda n: (n / sent) if sent else 0.0  # noqa: E731
+    return {"sent": sent, "delivered": delivered, "bounced": bounced, "complained": complained,
+            "delivered_rate": rate(delivered), "bounce_rate": rate(bounced), "complaint_rate": rate(complained)}
+
+
+def kpis(hours=24, now=None):
+    """Current vs previous window, with the tone of a change decided here (up is good for delivery, bad for bounces)."""
+    now = now or timezone.now()
+    cur = period_totals(now - timedelta(hours=hours), now)
+    prev = period_totals(now - timedelta(hours=2 * hours), now - timedelta(hours=hours))
+    s = series(hours, now)
+
+    def change(key, higher_is_good, as_points, neutral=False):
+        a, b = cur[key], prev[key]
+        if not prev["sent"] and not b:
+            return {"text": "no prior data", "tone": "flat", "dir": "flat"}
+        diff = (a - b) * 100 if as_points else ((a - b) / b * 100 if b else 100.0 if a else 0.0)
+        if abs(diff) < 0.005:
+            return {"text": "no change", "tone": "flat", "dir": "flat"}
+        up = diff > 0
+        good = up == higher_is_good
+        if neutral:  # volume going up or down is not good or bad by itself
+            return {"text": f"{abs(diff):.1f}%", "tone": "flat", "dir": "up" if up else "down"}
+        unit = " pts" if as_points else "%"
+        return {"text": f"{abs(diff):.1f}{unit}", "tone": "good" if good else "bad", "dir": "up" if up else "down"}
+
+    return {
+        "cur": cur, "prev": prev, "series": s,
+        "sent": {"value": cur["sent"], "delta": change("sent", True, False, neutral=True), "spark": s["send"]},
+        "delivered": {"value": cur["delivered_rate"], "delta": change("delivered_rate", True, True), "spark": s["delivery"]},
+        "bounce": {"value": cur["bounce_rate"], "delta": change("bounce_rate", False, True), "spark": s["bounce"]},
+        "complaint": {"value": cur["complaint_rate"], "delta": change("complaint_rate", False, True), "spark": s["complaint"]},
+    }
+
+
+def spark_points(values, width=84, height=26):
+    """SVG polyline points string for a tiny sparkline (no JS needed)."""
+    if len(values) < 2:
+        return ""
+    hi = max(values) or 1
+    step = width / (len(values) - 1)
+    return " ".join(f"{i * step:.1f},{height - 2 - (v / hi) * (height - 4):.1f}" for i, v in enumerate(values))

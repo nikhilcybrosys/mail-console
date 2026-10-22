@@ -1,0 +1,58 @@
+# DEMO ONLY. Starts the console with synthetic data so you can click around. It runs in a deliberately insecure
+# development mode (no real sign-in) and is bound to 127.0.0.1. Never use this file for a real deployment.
+#
+#   docker compose up --build
+#   open http://localhost:8000/dev-login/?email=admin@example.com
+name: mail-console-demo
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: mailconsole
+      POSTGRES_PASSWORD: demo-only-password
+      POSTGRES_DB: mailconsole
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mailconsole -d mailconsole"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    # No ports are published: only the web container can reach the database.
+
+  web:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      MC_DEBUG: "1"             # DEMO ONLY: enables the development sign-in shortcut
+      MC_DEV_LOGIN: "1"
+      MC_SECRET_KEY: demo-only-not-a-secret
+      MC_DB_HOST: db
+      MC_DB_PORT: "5432"
+      MC_DB_USER: mailconsole
+      MC_DB_PASSWORD: demo-only-password
+      MC_DB_NAME: mailconsole
+      MC_CONSOLE_HOST: localhost
+      MC_MAILVIEW_HOST: mailview.localhost
+      MC_WEBAUTHN_RP_ID: localhost
+      MC_WEBAUTHN_ORIGIN: http://localhost:8000
+    # Migrate, load the synthetic data once (the seed script is a no-op on later starts), then serve.
+    command: >
+      sh -c "python manage.py migrate --noinput &&
+             (python scripts/seed_demo.py || true) &&
+             exec gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 2 --worker-tmp-dir /dev/shm --access-logfile - --error-logfile -"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  dbdata:

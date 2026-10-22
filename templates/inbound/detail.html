@@ -1,0 +1,28 @@
+{% extends "base.html" %}{% load i18n ui %}
+{% block title %}{{ m.subject|default:_("Inbound message") }}{% endblock %}
+{% block crumbs %}<a href="{% url 'inbox' %}">{% trans "Inbox" %}</a><span class="sep">/</span><span class="truncate" aria-current="page">{{ m.subject|default:_("Message") }}</span>{% endblock %}
+{% block content %}
+<div class="ph"><div><h1>{{ m.subject|default:_("(no subject)") }}</h1><p>{% blocktrans with f=m.from_addr %}From {{ f }}{% endblocktrans %} · {% ago m.received_at %} · {{ m.size|filesizeformat }}</p></div>
+  <div class="ph-actions"><a class="btn" href="{% url 'inbox' %}">{% trans "Back to inbox" %}</a></div></div>
+<div class="grid-main">
+<div class="stack">
+  <section class="card"><div class="card-head"><div class="card-title">{% trans "Read the message" %}</div></div>
+    <form class="card-body stack" method="post" action="{% url 'inbound_body' m.pk %}">{% csrf_token %}
+      <div class="callout callout-warn" role="note"><div>{% icon "lock" %}</div><div><div class="callout-title">{% trans "Opens in a sanitized view" %}</div><p>{% trans "Scripts, images, forms and links are disabled and secrets are redacted. Opening it needs a reason and a passkey check, and is recorded in the audit log." %}</p></div></div>
+      <div class="field"><label class="label" for="in-reason">{% trans "Why do you need to read this?" %}</label><input class="input" id="in-reason" name="reason" required placeholder="{% trans 'For example: customer ticket #4411' %}"></div>
+      <div><button class="btn btn-primary">{% trans "Open sanitized view" %}</button></div>
+    </form></section>
+  {% if thread %}<section class="card"><div class="card-head"><div class="card-title">{% trans "Thread" %}</div></div><ul class="list">{% for t in thread %}<li><a class="spacer truncate" href="{% url 'inbound_detail' t.pk %}">{{ t.subject|default:_("(no subject)") }}</a><span class="muted">{% ago t.received_at %}</span></li>{% endfor %}</ul></section>{% endif %}
+</div>
+<div class="stack">
+  <section class="card"><div class="card-head"><div class="card-title">{% trans "Sender authentication" %}</div></div>
+    <div class="card-body">{% for k, v in m.verdicts.items %}<span class="badge {% if v == 'PASS' %}badge-ok{% elif v == 'FAIL' %}badge-err{% else %}badge-warn{% endif %}">{{ k|upper }} {{ v|lower }}</span> {% empty %}<span class="muted">{% trans "No verdicts recorded." %}</span>{% endfor %}</div></section>
+  <section class="card"><div class="card-head"><div class="card-title">{% trans "Attachments" %}</div></div>
+    {% if attachments %}<ul class="list">{% for a in attachments %}<li class="list-top"><span class="spacer"><span class="cell-primary">{{ a.filename }}</span><div class="cell-secondary">{{ a.content_type }} · {{ a.size|filesizeformat }}</div></span>
+      {% if a.scan_state == "clean" %}<span class="badge badge-ok">{% trans "Scanned clean" %}</span><a class="btn btn-sm" href="{% url 'inbound_attachment' m.pk a.index %}">{% trans "Download" %}</a>
+      {% elif a.scan_state == "infected" %}<span class="badge badge-err">{% trans "Malware found" %}</span>{% else %}<span class="badge badge-warn">{% trans "Scan pending" %}</span>{% endif %}</li>{% endfor %}</ul>
+    <div class="card-body help">{% trans "Files can only be downloaded after the malware scan comes back clean." %}</div>
+    {% else %}<div class="card-body muted">{% trans "No attachments." %}</div>{% endif %}</section>
+</div>
+</div>
+{% endblock %}

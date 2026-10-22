@@ -1,0 +1,13 @@
+{% extends "base.html" %}{% load i18n ui %}
+{% block title %}{% trans "Alerts" %}{% endblock %}
+{% block crumbs %}<span aria-current="page">{% trans "Alerts" %}</span>{% endblock %}
+{% block content %}
+<div class="ph"><div><h1>{% trans "Alerts" %}</h1><p>{% trans "Problems the console detected. They resolve on their own when the condition clears." %}</p></div></div>
+<div class="stack">
+<section class="card" aria-labelledby="open-h"><div class="card-head"><div class="card-title" id="open-h">{% trans "Open" %}</div><span class="badge badge-plain">{{ open|length }}</span></div>
+{% if open %}<ul class="list">{% for a in open %}<li class="list-top"><span class="badge {% if a.severity == 'page' %}badge-err{% else %}badge-warn{% endif %}">{% if a.severity == 'page' %}{% trans "Urgent" %}{% else %}{% trans "Warning" %}{% endif %}</span><span class="spacer"><span class="cell-primary">{{ a.title }}</span>{% if a.detail %}<div class="cell-secondary">{{ a.detail }}</div>{% endif %}</span><span class="muted">{% ago a.opened_at %}</span></li>{% endfor %}</ul>
+{% else %}{% include "components/_empty.html" with icon="circle-check" title=_("All clear") text=_("No open alerts. New problems appear here and in Slack if a webhook is configured.") %}{% endif %}</section>
+<section class="card" aria-labelledby="res-h"><div class="card-head"><div class="card-title" id="res-h">{% trans "Recently resolved" %}</div></div>
+{% if recent %}<ul class="list">{% for a in recent %}<li><span class="spacer">{{ a.title }}</span><span class="muted">{% trans "Resolved" %} {% ago a.resolved_at %}</span></li>{% endfor %}</ul>{% else %}<div class="card-body muted">{% trans "Nothing resolved yet." %}</div>{% endif %}</section>
+</div>
+{% endblock %}

@@ -1,0 +1,30 @@
+{% extends "base.html" %}{% load i18n ui %}
+{% block title %}{% trans "Inbox" %}{% endblock %}
+{% block crumbs %}<span aria-current="page">{% trans "Inbox" %}</span>{% endblock %}
+{% block content %}
+<div class="ph"><div><h1>{% trans "Inbox" %}</h1><p>{% trans "Mail received on your inbound domain: customer replies, bounce reports and DMARC reports. Bodies open in a sanitized view." %}</p></div>
+  <div class="ph-actions"><a class="btn" href="{% url 'dmarc' %}">{% icon "shield-check" %}{% trans "DMARC reports" %}</a></div></div>
+<nav class="tabs" aria-label="{% trans 'Filter by kind' %}">
+  <a class="tab" href="{% url 'inbox' %}" {% if not kind %}aria-current="page"{% endif %}>{% trans "All" %}</a>
+  <a class="tab" href="?kind=mail" {% if kind == 'mail' %}aria-current="page"{% endif %}>{% trans "Replies" %}</a>
+  <a class="tab" href="?kind=bounce" {% if kind == 'bounce' %}aria-current="page"{% endif %}>{% trans "Bounce reports" %}</a>
+  <a class="tab" href="?kind=dmarc_report" {% if kind == 'dmarc_report' %}aria-current="page"{% endif %}>{% trans "DMARC" %}</a>
+</nav>
+<form class="toolbar" method="get" action="{% url 'inbox' %}">
+  <div class="input-icon grow">{% icon "search" %}<input class="input" name="q" value="{{ q }}" placeholder="{% trans 'Search subject or sender' %}" aria-label="{% trans 'Search' %}" autocomplete="off"></div>
+  {% if kind %}<input type="hidden" name="kind" value="{{ kind }}">{% endif %}<button class="btn">{% trans "Search" %}</button>
+</form>
+<div class="table-wrap">
+{% if page.object_list %}
+<table class="table"><thead><tr><th>{% trans "Received" %}</th><th>{% trans "From" %}</th><th>{% trans "Subject" %}</th><th>{% trans "Authentication" %}</th></tr></thead><tbody>
+{% for m in page %}<tr>
+  <td class="muted">{% ago m.received_at %}</td><td class="mono">{{ m.from_addr }}</td>
+  <td><a class="cell-primary" href="{% url 'inbound_detail' m.pk %}">{{ m.subject|default:_("(no subject)") }}</a>{% if m.has_attachments %} <span class="muted" title="{% trans 'Has attachments' %}">{% icon "paperclip" "icon-sm" %}</span>{% endif %}</td>
+  <td>{% for k, v in m.verdicts.items %}<span class="badge {% if v == 'PASS' %}badge-ok{% elif v == 'FAIL' %}badge-err{% else %}badge-warn{% endif %}">{{ k|upper }} {{ v|lower }}</span> {% empty %}<span class="muted">—</span>{% endfor %}</td>
+</tr>{% endfor %}</tbody></table>
+<div class="table-foot"><span class="num">{% blocktrans with a=page.start_index b=page.end_index n=page.paginator.count %}Showing {{ a }}–{{ b }} of {{ n }}{% endblocktrans %}</span><span class="spacer"></span>
+  {% if page.has_previous %}{% qs_with page=page.previous_page_number as prev %}<a class="btn btn-sm" href="{{ prev }}">{% trans "Previous" %}</a>{% endif %}
+  {% if page.has_next %}{% qs_with page=page.next_page_number as nxt %}<a class="btn btn-sm" href="{{ nxt }}">{% trans "Next" %}</a>{% endif %}</div>
+{% else %}{% include "components/_empty.html" with icon="inbox" title=_("No inbound mail yet") text=_("Point an MX record for your inbound subdomain at SES Mail Manager, and replies will appear here.") %}{% endif %}
+</div>
+{% endblock %}

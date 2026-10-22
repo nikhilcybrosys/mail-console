@@ -1,0 +1,49 @@
+{% extends "base.html" %}{% load i18n ui %}
+{% block title %}{% trans "Suppression list" %}{% endblock %}
+{% block crumbs %}<span aria-current="page">{% trans "Suppression list" %}</span>{% endblock %}
+{% block content %}
+<div class="ph"><div><h1>{% trans "Suppression list" %}</h1><p>{% blocktrans with n=total r=current_region %}{{ n }} addresses in {{ r }}. SES will not send to these. Addresses are case-sensitive.{% endblocktrans %}</p></div></div>
+<form class="toolbar" method="get" action="{% url 'suppression' %}">
+  <div class="input-icon grow">{% icon "search" %}<input class="input" name="q" value="{{ q }}" placeholder="{% trans 'Search by address prefix' %}" aria-label="{% trans 'Search' %}" autocomplete="off"></div>
+  <button class="btn">{% trans "Search" %}</button>
+</form>
+<div class="grid-main">
+  <div class="table-wrap">
+  {% if page.object_list %}
+    <table class="table"><thead><tr><th>{% trans "Address" %}</th><th>{% trans "Reason" %}</th><th>{% trans "Added" %}</th><th><span class="sr-only">{% trans "Actions" %}</span></th></tr></thead><tbody>
+    {% for s in page %}<tr>
+      <td class="mono">{{ s.address }}</td>
+      <td><span class="badge {% if s.reason == 'COMPLAINT' %}badge-err{% else %}badge-warn{% endif %}">{% if s.reason == 'COMPLAINT' %}{% trans "Complaint" %}{% else %}{% trans "Bounce" %}{% endif %}</span></td>
+      <td class="muted">{% ago s.last_update_time %}</td>
+      <td class="col-actions">{% if can_remove %}<button class="btn btn-sm" type="button" data-remove-address="{{ s.address }}">{% trans "Remove" %}</button>{% endif %}</td>
+    </tr>{% endfor %}</tbody></table>
+    <div class="table-foot"><span class="num">{% blocktrans with a=page.start_index b=page.end_index n=page.paginator.count %}Showing {{ a }}–{{ b }} of {{ n }}{% endblocktrans %}</span><span class="spacer"></span>
+      {% if page.has_previous %}{% qs_with page=page.previous_page_number as prev %}<a class="btn btn-sm" href="{{ prev }}">{% trans "Previous" %}</a>{% endif %}
+      {% if page.has_next %}{% qs_with page=page.next_page_number as nxt %}<a class="btn btn-sm" href="{{ nxt }}">{% trans "Next" %}</a>{% endif %}</div>
+  {% else %}{% include "components/_empty.html" with icon="ban" title=_("Nothing on the suppression list") text=_("Addresses that hard-bounce or complain are added automatically.") %}{% endif %}
+  </div>
+  <div class="stack">
+    {% if can_bulk %}
+    <section class="card"><div class="card-head"><div class="card-title">{% trans "Remove several addresses" %}</div></div>
+      <form class="card-body stack" method="post" action="{% url 'suppression_remove' %}" data-confirm="{% trans 'Remove these addresses from the SES suppression list? More than 50 needs a second approver.' %}" data-confirm-label="{% trans 'Remove' %}">{% csrf_token %}
+        <div class="field"><label class="label" for="bulk-a">{% trans "Addresses" %}</label><textarea class="textarea" id="bulk-a" name="addresses" rows="4" required placeholder="{% trans 'One per line, exact case' %}"></textarea></div>
+        <div class="field"><label class="label" for="bulk-r">{% trans "Reason" %}</label><input class="input" id="bulk-r" name="reason" required><span class="help">{% trans "Recorded in the audit log." %}</span></div>
+        <div><button class="btn btn-danger">{% trans "Remove addresses" %}</button></div>
+      </form></section>
+    {% endif %}
+    <section class="card"><div class="card-head"><div class="card-title">{% trans "Recent changes" %}</div></div>
+      <ul class="list">{% for c in changes %}<li><span class="spacer mono truncate">{{ c.address }}</span><span class="badge badge-plain">{{ c.change }}</span><span class="muted">{% ago c.at %}</span></li>{% empty %}<li class="muted">{% trans "No changes recorded yet." %}</li>{% endfor %}</ul></section>
+  </div>
+</div>
+{% if can_remove %}
+<dialog id="remove-dialog" class="dialog-sm" aria-label="{% trans 'Remove from suppression list' %}">
+  <form class="card-body stack" method="post" action="{% url 'suppression_remove' %}">{% csrf_token %}
+    <h2 class="card-title">{% trans "Remove from suppression list?" %}</h2>
+    <p class="muted"><span class="mono" data-remove-label></span><br>{% trans "SES will send to this address again. If it keeps bouncing, your sender reputation drops." %}</p>
+    <input type="hidden" name="addresses">
+    <div class="field"><label class="label" for="rm-reason">{% trans "Reason" %}</label><input class="input" id="rm-reason" name="reason" required placeholder="{% trans 'For example: customer confirmed the address' %}"></div>
+    <div class="row"><span class="topbar-spacer"></span><button class="btn" type="button" data-dialog-cancel>{% trans "Cancel" %}</button><button class="btn btn-danger">{% trans "Remove" %}</button></div>
+  </form>
+</dialog>
+{% endif %}
+{% endblock %}

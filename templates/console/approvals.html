@@ -1,0 +1,26 @@
+{% extends "base.html" %}{% load i18n ui %}
+{% block title %}{% trans "Approvals" %}{% endblock %}
+{% block crumbs %}<span aria-current="page">{% trans "Approvals" %}</span>{% endblock %}
+{% block content %}
+<div class="ph"><div><h1>{% trans "Approvals" %}</h1><p>{% trans "Risky changes need a second person. You can't approve your own request, and approved changes run once, attributed to the requester in AWS CloudTrail." %}</p></div></div>
+<div class="stack">
+<section class="card" aria-labelledby="pend-h"><div class="card-head"><div class="card-title" id="pend-h">{% trans "Waiting for review" %}</div><span class="badge badge-plain">{{ pending|length }}</span></div>
+{% if pending %}
+<div class="table-wrap table-flush"><table class="table"><thead><tr><th>{% trans "Change" %}</th><th>{% trans "Requested by" %}</th><th>{% trans "Reason" %}</th><th>{% trans "Expires" %}</th><th><span class="sr-only">{% trans "Decision" %}</span></th></tr></thead><tbody>
+{% for r in pending %}<tr>
+  <td><div class="cell-primary">{{ r.action|action_label }}</div><div class="cell-secondary">{{ r.region }} · {{ r.params|params_brief }}</div></td>
+  <td>{{ r.requested_by.email }}<div class="cell-secondary">{% ago r.created_at %}</div></td>
+  <td class="reason-cell">{{ r.reason }}</td>
+  <td class="muted">{% ago r.expires_at %}</td>
+  <td class="col-actions">{% if r.requested_by_id != request.user.id %}
+    <form class="inline-form" method="post" action="{% url 'approval_decide' r.pk %}" data-confirm="{% blocktrans with a=r.action|action_label u=r.requested_by.email %}Run “{{ a }}” on SES now? It runs once and is recorded as requested by {{ u }}.{% endblocktrans %}" data-confirm-label="{% trans 'Approve and run' %}">{% csrf_token %}<input type="hidden" name="decision" value="approve"><button class="btn btn-sm btn-primary">{% trans "Approve and run" %}</button></form>
+    <form class="inline-form" method="post" action="{% url 'approval_decide' r.pk %}">{% csrf_token %}<input type="hidden" name="decision" value="reject"><button class="btn btn-sm">{% trans "Reject" %}</button></form>
+  {% else %}<span class="badge badge-plain">{% trans "Your request" %}</span>{% endif %}</td>
+</tr>{% endfor %}</tbody></table></div>
+{% else %}{% include "components/_empty.html" with icon="shield-check" title=_("Nothing waiting") text=_("Requests that need a second approver show up here.") %}{% endif %}</section>
+<section class="card" aria-labelledby="done-h"><div class="card-head"><div class="card-title" id="done-h">{% trans "Recent decisions" %}</div></div>
+{% if recent %}<div class="table-wrap table-flush"><table class="table"><thead><tr><th>{% trans "Change" %}</th><th>{% trans "Outcome" %}</th><th>{% trans "Requested by" %}</th><th>{% trans "Approved by" %}</th><th>{% trans "When" %}</th></tr></thead><tbody>
+{% for r in recent %}<tr><td>{{ r.action|action_label }}<div class="cell-secondary">{{ r.params|params_brief }}</div></td><td><span class="badge badge-{{ r.state|approval_tone }}">{{ r.state|title }}</span>{% if r.state == "failed" and r.result.error %}<div class="cell-secondary">{{ r.result.error }}</div>{% endif %}</td><td>{{ r.requested_by.email }}</td><td>{{ r.approver.email|default:"—" }}</td><td class="muted">{% ago r.created_at %}</td></tr>{% endfor %}</tbody></table></div>
+{% else %}<div class="card-body muted">{% trans "No decisions yet." %}</div>{% endif %}</section>
+</div>
+{% endblock %}

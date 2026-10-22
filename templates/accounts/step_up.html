@@ -1,0 +1,21 @@
+{% extends "base.html" %}{% load i18n ui %}
+{% block title %}{% trans "Confirm it's you" %}{% endblock %}
+{% block crumbs %}<span aria-current="page">{% trans "Confirm it's you" %}</span>{% endblock %}
+{% block content %}
+<div class="page-narrow">
+  <div class="card"><div class="card-body stack">
+    <div class="empty-icon">{% icon "fingerprint" "icon-lg" %}</div>
+    <div><h1 class="auth-title">{% trans "Confirm with your passkey" %}</h1><p class="muted">{% trans "This action changes SES or opens private content, so we need a fresh passkey check." %}</p></div>
+    {% if has_passkey %}
+      <div><button class="btn btn-primary" type="button" data-webauthn="assert" data-next="{{ next }}">{% trans "Use passkey" %}</button></div>
+    {% elif fresh_login %}
+      <div class="callout callout-info"><div>{% icon "info" %}</div><div><div class="callout-title">{% trans "No passkey yet" %}</div><p>{% trans "Register one now. You signed in moments ago, so this is allowed." %}</p></div></div>
+      <div class="field"><label class="label" for="pk-name">{% trans "Name this passkey" %}</label><input class="input" id="pk-name" value="My passkey"></div>
+      <div><button class="btn btn-primary" type="button" data-webauthn="register" data-next="{{ next }}">{% trans "Register passkey" %}</button></div>
+    {% else %}
+      <div class="callout callout-warn"><div>{% icon "triangle-alert" %}</div><div><div class="callout-title">{% trans "Sign in again first" %}</div><p>{% trans "Sign out and back in, then register a passkey." %}</p></div></div>
+    {% endif %}
+    <p id="wa-status" class="help" role="status"></p>
+  </div></div>
+</div>
+{% endblock %}

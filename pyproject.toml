@@ -1,0 +1,21 @@
+[project]
+name = "mail-console"
+version = "0.1.0"
+description = "Secure management and monitoring console for Amazon SES: sent-mail log, suppression, domain health, approvals and audit."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+classifiers = [
+  "Framework :: Django :: 5.2",
+  "Intended Audience :: System Administrators",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Communications :: Email",
+  "Topic :: System :: Systems Administration",
+]
+dependencies = [
+  "Django>=5.2,<5.3", "psycopg[binary]>=3.2", "boto3", "nh3", "dnspython", "authlib", "fido2",
+  "whitenoise", "gunicorn", "requests", "defusedxml",
+]
+# Not installable as a package yet: the app is deployed from the repository (see README).

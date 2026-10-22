@@ -1,0 +1,127 @@
+{% load static i18n ui %}<!doctype html>
+<html lang="en" data-theme="light" data-density="compact">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="same-origin">
+<meta name="htmx-config" content='{"allowEval":false,"allowScriptTags":false,"selfRequestsOnly":true,"historyCacheSize":0,"includeIndicatorStyles":false,"refreshOnHistoryMiss":true}'>
+<title>{% block title %}{% trans "Overview" %}{% endblock %} · {{ brand_name }}</title>
+<script src="{% static 'js/theme.js' %}"></script>
+<link rel="preload" href="{% static 'fonts/Geist-Regular.woff2' %}" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="{% static 'fonts/Geist-Medium.woff2' %}" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="{% static 'css/tokens.css' %}">
+<link rel="stylesheet" href="{% static 'css/base.css' %}">
+<link rel="stylesheet" href="{% static 'css/shell.css' %}">
+<link rel="stylesheet" href="{% static 'css/components.css' %}">
+<link rel="stylesheet" href="{% static 'css/pages.css' %}">
+<link rel="stylesheet" href="{% url 'theme_css' %}">
+{% block head %}{% endblock %}
+</head>
+<body hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}' data-csrf="{{ csrf_token }}">
+<a class="skip" href="#main">{% trans "Skip to content" %}</a>
+{% if user.is_authenticated %}
+<div class="app">
+  <aside class="sidebar" aria-label="{% trans 'Primary' %}">
+    <div class="sb-head">
+      <a class="sb-brand" href="{% url 'dashboard' %}">
+        <img class="logo-light" src="{% static brand_logo %}" alt="" width="26" height="26">
+        <img class="logo-dark" src="{% static brand_logo_dark %}" alt="" width="26" height="26">
+        <span>{{ brand_name }}</span>
+      </a>
+    </div>
+    <nav class="sb-scroll">
+      {% for g in nav_groups %}
+      <div class="nav-group">
+        <div class="nav-label">{{ g.label }}</div>
+        {% for i in g.items %}
+        <a class="nav-item" href="{{ i.url }}" {% if i.active %}aria-current="page"{% endif %} title="{{ i.label }}">
+          {% icon i.icon %}<span class="label">{{ i.label }}</span>{% if i.count %}<span class="count">{{ i.count }}</span>{% endif %}
+        </a>
+        {% endfor %}
+      </div>
+      {% endfor %}
+    </nav>
+    <div class="sb-foot">
+      <button class="nav-item btn-ghost" type="button" data-sidebar-toggle aria-label="{% trans 'Collapse sidebar' %}">{% icon "panel-left" %}<span class="label">{% trans "Collapse" %}</span></button>
+    </div>
+  </aside>
+  <div class="main">
+    <header class="topbar">
+      <button class="btn btn-ghost btn-icon nav-open" type="button" data-nav-toggle aria-label="{% trans 'Open navigation' %}">{% icon "panel-left" %}</button>
+      <nav class="crumbs" aria-label="{% trans 'Breadcrumb' %}">{% block crumbs %}{% endblock %}</nav>
+      <div class="topbar-spacer"></div>
+      <button class="search-trigger" type="button" data-open-palette aria-label="{% trans 'Search' %}">
+        {% icon "search" %}<span class="grow">{% trans "Search address, message ID or domain" %}</span><span class="kbd">⌘K</span>
+      </button>
+      <form action="{% url 'set_region' %}" method="post">{% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.path }}">
+        <label class="sr-only" for="region">{% trans "Region" %}</label>
+        <select id="region" class="select region-select" name="region" data-autosubmit>{% for r in aws_regions %}<option {% if r == current_region %}selected{% endif %}>{{ r }}</option>{% endfor %}</select>
+      </form>
+      <button class="btn btn-ghost btn-icon" type="button" popovertarget="user-menu" aria-label="{% trans 'Account menu' %}"><span class="avatar">{{ user_initials }}</span></button>
+      <div id="user-menu" popover class="menu menu-user">
+        <div class="menu-title">{{ user.email }}<br><span class="muted">{{ user.effective_role }}</span></div>
+        <div class="menu-sep"></div>
+        <div class="menu-title">{% trans "Theme" %}</div>
+        <button class="menu-item" role="menuitemradio" aria-checked="false" data-theme-set="light">{% icon "sun" %}{% trans "Light" %}</button>
+        <button class="menu-item" role="menuitemradio" aria-checked="false" data-theme-set="dark">{% icon "moon" %}{% trans "Dark" %}</button>
+        <button class="menu-item" role="menuitemradio" aria-checked="false" data-theme-set="system">{% icon "monitor" %}{% trans "Match system" %}</button>
+        <div class="menu-sep"></div>
+        <div class="menu-title">{% trans "Table density" %}</div>
+        <button class="menu-item" role="menuitemradio" aria-checked="false" data-density-set="compact">{% icon "rows-3" %}{% trans "Compact" %}</button>
+        <button class="menu-item" role="menuitemradio" aria-checked="false" data-density-set="comfortable">{% icon "rows-3" %}{% trans "Comfortable" %}</button>
+        <div class="menu-sep"></div>
+        <button class="menu-item" type="button" data-open-shortcuts>{% icon "keyboard" %}{% trans "Keyboard shortcuts" %}</button>
+        <form action="{% url 'logout' %}" method="post">{% csrf_token %}<button class="menu-item">{% icon "log-out" %}{% trans "Sign out" %}</button></form>
+      </div>
+    </header>
+    <main class="page {% block page_class %}{% endblock %}" id="main">{% block content %}{% endblock %}</main>
+  </div>
+</div>
+
+<dialog id="drawer" class="drawer" aria-label="{% trans 'Details' %}"><div id="drawer-body" class="drawer-body"></div></dialog>
+
+<dialog id="palette" class="palette" aria-label="{% trans 'Search' %}">
+  <form action="{% url 'search' %}" method="get" class="palette-input" role="search">
+    {% icon "search" "icon-lg" %}
+    <input name="q" autocomplete="off" spellcheck="false" placeholder="{% trans 'Search address, message ID or domain' %}" aria-label="{% trans 'Search' %}"
+           hx-get="{% url 'palette' %}" hx-trigger="input changed delay:120ms, load-results" hx-target="#palette-results" hx-swap="innerHTML">
+  </form>
+  <div id="palette-results" class="palette-results" role="listbox"></div>
+  <div class="palette-foot"><span><span class="kbd">↑</span> <span class="kbd">↓</span> {% trans "to move" %}</span><span><span class="kbd">↵</span> {% trans "to open" %}</span><span><span class="kbd">esc</span> {% trans "to close" %}</span></div>
+</dialog>
+
+<dialog id="confirm" class="dialog-sm" aria-label="{% trans 'Confirm' %}">
+  <div class="card-body stack">
+    <h2 class="card-title">{% trans "Are you sure?" %}</h2>
+    <p class="muted" data-confirm-msg></p>
+    <div class="row"><span class="topbar-spacer"></span><button class="btn" type="button" data-confirm-cancel>{% trans "Cancel" %}</button><button class="btn btn-danger" type="button" data-confirm-ok>{% trans "Confirm" %}</button></div>
+  </div>
+</dialog>
+
+<dialog id="shortcuts" class="dialog-sm" aria-label="{% trans 'Keyboard shortcuts' %}">
+  <div class="card-body stack">
+    <h2 class="card-title">{% trans "Keyboard shortcuts" %}</h2>
+    <dl class="kv">
+      <dt><span class="kbd">⌘K</span> / <span class="kbd">/</span></dt><dd>{% trans "Search" %}</dd>
+      <dt><span class="kbd">j</span> <span class="kbd">k</span></dt><dd>{% trans "Move between table rows" %}</dd>
+      <dt><span class="kbd">↵</span></dt><dd>{% trans "Open the selected row" %}</dd>
+      <dt><span class="kbd">g</span> then <span class="kbd">d</span> <span class="kbd">m</span> <span class="kbd">s</span> <span class="kbd">i</span> <span class="kbd">p</span> <span class="kbd">a</span></dt><dd>{% trans "Go to overview, mail, suppression, domains, pipeline, alerts" %}</dd>
+      <dt><span class="kbd">[</span></dt><dd>{% trans "Collapse the sidebar" %}</dd>
+      <dt><span class="kbd">?</span></dt><dd>{% trans "Show this list" %}</dd>
+    </dl>
+  </div>
+</dialog>
+
+<div id="toasts" class="toasts" aria-live="polite" data-sprite="{% static 'icons/sprite.svg' %}"></div>
+{% for m in messages %}<div hidden data-flash="{% if m.tags == 'success' %}ok{% elif m.tags == 'error' %}err{% else %}info{% endif %}">{{ m }}</div>{% endfor %}
+{% else %}{% block anon %}{% endblock %}{% endif %}
+<script src="{% static 'vendor/htmx/htmx.min.js' %}" defer></script>
+<script src="{% static 'js/shell.js' %}" defer></script>
+<script src="{% static 'js/palette.js' %}" defer></script>
+<script src="{% static 'js/drawer.js' %}" defer></script>
+<script src="{% static 'js/table.js' %}" defer></script>
+<script src="{% static 'js/webauthn.js' %}" defer></script>
+{% block page_js %}{% endblock %}
+</body></html>

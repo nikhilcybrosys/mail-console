@@ -1,0 +1,11 @@
+Django>=5.2,<5.3
+psycopg[binary]>=3.2
+boto3
+nh3
+dnspython
+authlib
+fido2
+whitenoise
+gunicorn
+requests
+defusedxml

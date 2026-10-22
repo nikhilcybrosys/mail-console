@@ -1,0 +1,15 @@
+{% extends "base.html" %}{% load i18n ui %}
+{% block title %}{% trans "Sent mail" %}{% endblock %}
+{% block crumbs %}<span aria-current="page">{% trans "Sent mail" %}</span>{% endblock %}
+{% block content %}
+<div class="ph"><div><h1>{% trans "Sent mail" %}</h1><p>{% trans "Every message SES accepted, with its delivery timeline. Select a row to see what happened." %}</p></div></div>
+<form class="toolbar" method="get" action="{% url 'messages' %}" hx-get="{% url 'messages' %}" hx-target="#results" hx-push-url="true" hx-indicator="#results"
+      hx-trigger="input changed delay:300ms from:#f-q, change from:.js-filter, submit">
+  <div class="input-icon grow">{% icon "search" %}<input id="f-q" class="input" name="q" value="{{ q }}" placeholder="{% trans 'Search by address, message ID or subject' %}" aria-label="{% trans 'Search' %}" autocomplete="off"></div>
+  <select class="select js-filter" name="app" aria-label="{% trans 'App' %}"><option value="">{% trans "All apps" %}</option>{% for a in apps %}{% if a %}<option {% if filters.app == a %}selected{% endif %}>{{ a }}</option>{% endif %}{% endfor %}</select>
+  <select class="select js-filter" name="days" aria-label="{% trans 'Time range' %}"><option value="">{% trans "All time" %}</option><option value="1" {% if filters.days == "1" %}selected{% endif %}>{% trans "Last 24 hours" %}</option><option value="7" {% if filters.days == "7" %}selected{% endif %}>{% trans "Last 7 days" %}</option><option value="30" {% if filters.days == "30" %}selected{% endif %}>{% trans "Last 30 days" %}</option></select>
+  {% if filters.state %}<input type="hidden" name="state" value="{{ filters.state }}">{% endif %}
+  <noscript><button class="btn btn-primary">{% trans "Search" %}</button></noscript>
+</form>
+<div id="results">{% include "console/_messages_results.html" %}</div>
+{% endblock %}

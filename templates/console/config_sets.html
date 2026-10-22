@@ -1,0 +1,17 @@
+{% extends "base.html" %}{% load i18n ui %}
+{% block title %}{% trans "Event pipeline" %}{% endblock %}
+{% block crumbs %}<span aria-current="page">{% trans "Event pipeline" %}</span>{% endblock %}
+{% block content %}
+<div class="ph"><div><h1>{% trans "Event pipeline" %}</h1><p>{% trans "Configuration sets decide which events SES publishes. A set only feeds this console if it has an event destination." %}</p></div></div>
+<div class="table-wrap">
+{% if items %}
+<table class="table"><thead><tr><th>{% trans "Configuration set" %}</th><th>{% trans "Event destinations" %}</th><th>{% trans "Last event" %}</th><th>{% trans "Sending" %}</th></tr></thead><tbody>
+{% for it in items %}<tr>
+  <td class="mono cell-primary">{{ it.c.name }}</td>
+  <td>{% for d in it.c.destinations %}<span class="badge {% if d.Enabled %}badge-ok{% else %}badge-warn{% endif %}">{{ d.Name }}{% if not d.Enabled %} ({% trans "disabled" %}){% endif %}</span> {% empty %}<span class="badge badge-err">{% trans "No destination: no events" %}</span>{% endfor %}</td>
+  <td class="muted">{% if it.last_event %}{% ago it.last_event %}{% else %}{% trans "Never" %}{% endif %}</td>
+  <td>{% if it.c.sending_enabled %}<span class="badge badge-ok badge-plain">{% trans "On" %}</span>{% else %}<span class="badge badge-err">{% trans "Paused" %}</span>{% endif %}</td>
+</tr>{% endfor %}</tbody></table>
+{% else %}{% include "components/_empty.html" with icon="activity" title=_("No configuration sets synced") text=_("Create a configuration set with an SNS event destination, then run the state sync.") %}{% endif %}
+</div>
+{% endblock %}

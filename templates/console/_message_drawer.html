@@ -1,0 +1,11 @@
+{% load i18n ui %}
+<div class="drawer-head">
+  <div class="grow">
+    <div class="row">{% state_badge m.final_state %}<span class="muted">{% ago m.sent_at %}</span></div>
+    <h2 data-autofocus tabindex="-1">{{ m.subject|default:_("(no subject)") }}</h2>
+    <button class="id-chip" type="button" data-copy="{{ m.ses_message_id }}" title="{% trans 'Copy message ID' %}">{{ m.ses_message_id }}{% icon "copy" "icon-sm" %}</button>
+  </div>
+  <a class="btn btn-sm btn-ghost" href="{% url 'message_detail' m.pk %}" title="{% trans 'Open as a full page' %}">{% icon "external-link" %}</a>
+  <button class="btn btn-sm btn-ghost btn-icon" type="button" data-drawer-close aria-label="{% trans 'Close' %}">{% icon "x" %}</button>
+</div>
+<div class="drawer-pad">{% include "console/_message_panels.html" with pfx="d" %}</div>

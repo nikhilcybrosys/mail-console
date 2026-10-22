@@ -1,0 +1,27 @@
+{% extends "base.html" %}{% load i18n ui %}
+{% block title %}{% trans "Audit log" %}{% endblock %}
+{% block crumbs %}<span aria-current="page">{% trans "Audit log" %}</span>{% endblock %}
+{% block content %}
+<div class="ph"><div><h1>{% trans "Audit log" %}</h1><p>{% trans "Every sign-in, change and message-body view. Rows cannot be edited or deleted, and each row is chained to the one before it." %}</p></div>
+  <div class="ph-actions"><a class="btn" href="?verify=1">{% icon "shield-check" %}{% trans "Verify hash chain" %}</a></div></div>
+{% if chain %}{% if chain.ok %}<div class="callout callout-ok stack-gap" role="status"><div>{% icon "circle-check" %}</div><div><div class="callout-title">{% trans "Chain intact" %}</div><p>{% trans "No row has been changed or removed since it was written." %}</p></div></div>
+{% else %}<div class="callout callout-err stack-gap" role="alert"><div>{% icon "circle-alert" %}</div><div><div class="callout-title">{% blocktrans with n=chain.bad_id %}Tampering detected at row {{ n }}{% endblocktrans %}</div><p>{% trans "Treat this as a security incident and compare with the copy in the locked audit bucket." %}</p></div></div>{% endif %}{% endif %}
+<form class="toolbar" method="get" action="{% url 'audit' %}">
+  <div class="input-icon grow">{% icon "search" %}<input class="input" name="actor" value="{{ filters.actor }}" placeholder="{% trans 'Filter by person' %}" aria-label="{% trans 'Person' %}"></div>
+  <input class="input input-auto" name="action" value="{{ filters.action }}" placeholder="{% trans 'Action starts with…' %}" aria-label="{% trans 'Action' %}">
+  <input class="input input-auto" name="target" value="{{ filters.target }}" placeholder="{% trans 'Target contains…' %}" aria-label="{% trans 'Target' %}">
+  <button class="btn">{% trans "Filter" %}</button>
+</form>
+<div class="table-wrap">
+{% if page.object_list %}
+<table class="table"><thead><tr><th>{% trans "Time (UTC)" %}</th><th>{% trans "Person" %}</th><th>{% trans "Action" %}</th><th>{% trans "Target" %}</th><th>{% trans "IP address" %}</th></tr></thead><tbody>
+{% for a in page %}<tr>
+  <td class="muted num">{{ a.ts|date:"d M H:i:s" }}</td><td>{{ a.actor }}</td>
+  <td><span class="mono cell-primary">{{ a.action }}</span>{% if a.details %}<details class="row-details"><summary>{% trans "Details" %}</summary><pre class="code-block">{{ a.details|json_pretty }}</pre></details>{% endif %}</td>
+  <td class="mono">{{ a.target }}</td><td class="muted mono">{{ a.ip|default:"" }}</td></tr>{% endfor %}</tbody></table>
+<div class="table-foot"><span class="num">{% blocktrans with a=page.start_index b=page.end_index n=page.paginator.count %}Showing {{ a }}–{{ b }} of {{ n }}{% endblocktrans %}</span><span class="spacer"></span>
+  {% if page.has_previous %}{% qs_with page=page.previous_page_number as prev %}<a class="btn btn-sm" href="{{ prev }}">{% trans "Previous" %}</a>{% endif %}
+  {% if page.has_next %}{% qs_with page=page.next_page_number as nxt %}<a class="btn btn-sm" href="{{ nxt }}">{% trans "Next" %}</a>{% endif %}</div>
+{% else %}{% include "components/_empty.html" with icon="scroll-text" title=_("No matching entries") text=_("Try clearing a filter.") action_url=request.path action_label=_("Clear filters") %}{% endif %}
+</div>
+{% endblock %}

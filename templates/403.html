@@ -1,0 +1,4 @@
+{% extends "base.html" %}{% load i18n ui %}
+{% block title %}You don't have access to this{% endblock %}
+{% block content %}<div class="err-page"><div class="empty"><div class="empty-icon">{% icon "lock" "icon-lg" %}</div><h3>{% trans "You don't have access to this" %}</h3><p>{% trans "Your role doesn't allow this page or action. Ask a security admin if you need it." %}</p><a class="btn" href="/">{% trans "Go to overview" %}</a></div></div>{% endblock %}
+{% block anon %}<main class="err-page" id="main"><div class="empty"><div class="empty-icon">{% icon "lock" "icon-lg" %}</div><h3>{% trans "You don't have access to this" %}</h3><p>{% trans "Your role doesn't allow this page or action. Ask a security admin if you need it." %}</p><a class="btn" href="/login/">{% trans "Go to sign in" %}</a></div></main>{% endblock %}

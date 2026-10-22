@@ -1,0 +1,53 @@
+/* Design tokens. Templates and component CSS must use these names only: no raw hex outside this file.
+   Two deliberate WCAG AA choices: --accent-text (links) is darker than --accent, and primary buttons fill with
+   --btn-primary under white text. Both are re-verified by tests/test_ui_contract.py. To re-theme, change the values
+   here (or set MC_BRAND_ACCENT, which must keep white text at 4.5:1). */
+@font-face{font-family:"Geist";font-weight:400;font-style:normal;font-display:swap;src:url("../fonts/Geist-Regular.woff2") format("woff2")}
+@font-face{font-family:"Geist";font-weight:500;font-style:normal;font-display:swap;src:url("../fonts/Geist-Medium.woff2") format("woff2")}
+@font-face{font-family:"Geist";font-weight:600;font-style:normal;font-display:swap;src:url("../fonts/Geist-SemiBold.woff2") format("woff2")}
+@font-face{font-family:"Geist Mono";font-weight:400;font-style:normal;font-display:swap;src:url("../fonts/GeistMono-Regular.woff2") format("woff2")}
+@font-face{font-family:"Geist Mono";font-weight:500;font-style:normal;font-display:swap;src:url("../fonts/GeistMono-Medium.woff2") format("woff2")}
+
+:root,[data-theme="light"]{
+  --bg:#F7F6F4;--surface:#FFFFFF;--surface-2:#FAF9F7;--hover:#FAF8F5;--soft:#F2F0EC;
+  --border:#E7E4DF;--border-soft:#F1EEEA;--border-strong:#D3CFC8;
+  --text:#141414;--text-2:#3A3632;--muted:#6B6761;--faint:#8A8680;
+  --accent:#E5503A;--accent-hover:#CF4430;--accent-soft:#FDECE8;--accent-text:#B83A27;--ring:#FDECE8;
+  --ok:#1F7A45;--ok-bg:#E6F5EC;--warn:#A35A06;--warn-bg:#FFF4E2;
+  --err:#C8341F;--err-bg:#FCE9E6;--err-border:#F0CFC8;
+  --info:#2A62C9;--info-bg:#E8F0FD;--tag:#1F5C4C;--tag-bg:#EEF3F1;
+  --track:#D8D5D0;--inverse:#141414;--inverse-text:#FFFFFF;
+  --btn-primary:#CF4430;--btn-primary-hover:#B83A27;--btn-danger:#C8341F;--text-on-color:#FFFFFF;
+  --overlay:rgba(20,18,16,.32);--sk1:#F1EEEA;--sk2:#FAF9F7;
+  --shadow-sm:0 1px 2px rgba(20,20,20,.04);--shadow:0 4px 14px rgba(20,20,20,.06);--shadow-lg:0 16px 48px rgba(0,0,0,.16);
+  --chart-1:#E5503A;--chart-2:#2A62C9;--chart-3:#1F7A45;--chart-4:#A35A06;--chart-grid:#ECE9E4;--mail-bg:#FFFFFF;
+  color-scheme:light;
+}
+[data-theme="dark"]{
+  --bg:#0D0D0E;--surface:#151517;--surface-2:#18181A;--hover:#1B1B1E;--soft:#1E1E21;
+  --border:#26262A;--border-soft:#1E1E21;--border-strong:#34343A;
+  --text:#EDEDED;--text-2:#D0D0D3;--muted:#A1A1A6;--faint:#7A7A80;
+  --accent:#E5503A;--accent-hover:#CF4430;--accent-soft:#341E1C;--accent-text:#F4A393;--ring:#4A2119;
+  --ok:#3DD68C;--ok-bg:#1A2C25;--warn:#F5B544;--warn-bg:#30281C;
+  --err:#FF6B5C;--err-bg:#332020;--err-border:#5B2F2C;
+  --info:#6EA2FF;--info-bg:#212735;--tag:#83CDB6;--tag-bg:#172924;
+  --track:#3A3835;--inverse:#EDEDED;--inverse-text:#141414;
+  --btn-primary:#CF4430;--btn-primary-hover:#B83A27;--btn-danger:#C8341F;--text-on-color:#FFFFFF;
+  --overlay:rgba(0,0,0,.55);--sk1:#1E1E21;--sk2:#26262A;
+  --shadow-sm:none;--shadow:0 4px 14px rgba(0,0,0,.35);--shadow-lg:0 16px 48px rgba(0,0,0,.5);
+  --chart-1:#FF7A66;--chart-2:#6EA2FF;--chart-3:#3DD68C;--chart-4:#F5B544;--chart-grid:#222226;--mail-bg:#FFFFFF;
+  color-scheme:dark;
+}
+/* Density. The bare :root default comes first so [data-density] wins on source order. */
+:root{--pad:20px;--gap:16px;--cell:10px;--r:14px;--ctl:34px;--row:40px}
+[data-density="comfortable"]{--pad:22px;--gap:20px;--cell:12px;--r:14px;--ctl:38px;--row:46px}
+[data-density="compact"]{--pad:16px;--gap:12px;--cell:7px;--r:10px;--ctl:32px;--row:34px}
+
+:root{
+  --font:"Geist",-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+  --mono:"Geist Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  --fs-xs:11px;--fs-sm:12px;--fs-md:13px;--fs-base:14px;--fs-lg:16px;--fs-xl:20px;--fs-2xl:24px;
+  --r-sm:6px;--r-md:8px;--r-lg:var(--r);
+  --sb-w:248px;--sb-w-collapsed:64px;--topbar-h:56px;--drawer-w:560px;
+  --ease:cubic-bezier(.4,0,.2,1);--dur:.16s;
+}

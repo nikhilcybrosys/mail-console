@@ -1,0 +1,16 @@
+{% extends "base.html" %}{% load i18n ui %}
+{% block title %}{% trans "DMARC reports" %}{% endblock %}
+{% block crumbs %}<a href="{% url 'inbox' %}">{% trans "Inbox" %}</a><span class="sep">/</span><span aria-current="page">{% trans "DMARC reports" %}</span>{% endblock %}
+{% block content %}
+<div class="ph"><div><h1>{% trans "DMARC reports" %}</h1><p>{% trans "Aggregate reports from mailbox providers show who is sending mail as your domain. Tighten your policy only once legitimate senders pass." %}</p></div></div>
+<div class="stack">
+<section class="card" aria-labelledby="dm-h"><div class="card-head"><div class="card-title" id="dm-h">{% trans "By domain" %}</div></div>
+{% if summary %}<div class="table-wrap table-flush"><table class="table"><thead><tr><th>{% trans "Domain" %}</th><th>{% trans "Policy" %}</th><th class="col-num">{% trans "Passing" %}</th><th class="col-num">{% trans "Failing" %}</th></tr></thead><tbody>
+{% for r in summary %}<tr><td class="mono cell-primary">{{ r.domain }}</td><td>{% if r.policy == "none" %}<span class="badge badge-warn">{% trans "none: monitoring only" %}</span>{% else %}<span class="badge badge-ok">{{ r.policy }}</span>{% endif %}</td><td class="col-num num">{{ r.ok }}</td><td class="col-num num">{% if r.bad %}<span class="badge badge-err badge-plain">{{ r.bad }}</span>{% else %}0{% endif %}</td></tr>{% endfor %}</tbody></table></div>
+{% else %}{% include "components/_empty.html" with icon="shield-check" title=_("No DMARC reports yet") text=_("Add rua=mailto:… on your inbound address to your DMARC record. Reports arrive within a day or two.") %}{% endif %}</section>
+<section class="card" aria-labelledby="fs-h"><div class="card-head"><div class="card-title" id="fs-h">{% trans "Sources failing DMARC" %}</div></div>
+{% if failing %}<div class="table-wrap table-flush"><table class="table"><thead><tr><th>{% trans "Source IP" %}</th><th>{% trans "Domain" %}</th><th class="col-num">{% trans "Messages" %}</th><th>{% trans "Reported by" %}</th><th>{% trans "DKIM" %}</th><th>SPF</th></tr></thead><tbody>
+{% for f in failing %}<tr><td class="mono">{{ f.source_ip }}</td><td>{{ f.domain }}</td><td class="col-num num">{{ f.count }}</td><td class="muted">{{ f.org }}</td><td><span class="badge badge-err badge-plain">{{ f.dkim }}</span></td><td><span class="badge badge-err badge-plain">{{ f.spf }}</span></td></tr>{% endfor %}</tbody></table></div>
+{% else %}<div class="card-body muted">{% trans "No failing sources reported." %}</div>{% endif %}</section>
+</div>
+{% endblock %}

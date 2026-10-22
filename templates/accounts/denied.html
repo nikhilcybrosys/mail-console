@@ -1,0 +1,6 @@
+{% extends "base.html" %}{% load i18n ui %}
+{% block title %}{% trans "Access denied" %}{% endblock %}
+{% block anon %}<main class="auth-panel" id="main"><div class="auth-card stack">
+  <div class="empty-icon">{% icon "lock" "icon-lg" %}</div>
+  <div><h1 class="auth-title">{% trans "This account can't use the console" %}</h1><p class="muted">{% trans "Ask a security admin to add you, then try again." %}</p></div>
+  <div><a class="btn" href="/login/">{% trans "Back to sign in" %}</a></div></div></main>{% endblock %}

@@ -1,0 +1,55 @@
+{% load i18n ui %}
+<div class="tabs" role="tablist" aria-label="{% trans 'Message sections' %}">
+  <button class="tab" role="tab" id="{{ pfx }}-t-tl" aria-controls="{{ pfx }}-p-tl" aria-selected="true">{% trans "Timeline" %}<span class="count num">{{ timeline|length }}</span></button>
+  <button class="tab" role="tab" id="{{ pfx }}-t-rc" aria-controls="{{ pfx }}-p-rc" aria-selected="false">{% trans "Recipients" %}<span class="count num">{{ recipients|length }}</span></button>
+  <button class="tab" role="tab" id="{{ pfx }}-t-dt" aria-controls="{{ pfx }}-p-dt" aria-selected="false">{% trans "Details" %}</button>
+  <button class="tab" role="tab" id="{{ pfx }}-t-bd" aria-controls="{{ pfx }}-p-bd" aria-selected="false">{% trans "Body" %}</button>
+</div>
+
+<div class="tabpanel" role="tabpanel" id="{{ pfx }}-p-tl" aria-labelledby="{{ pfx }}-t-tl">
+  <ol class="tl">
+  {% for t in timeline %}
+    <li class="tl-item tl-{{ t.e.event_type|state_tone }}">
+      <span class="tl-dot">{% icon t.e.event_type|state_icon %}</span>
+      <div>
+        <div class="tl-head"><span class="tl-title">{{ t.e.event_type|state_label }}</span><span class="tl-time">{% ago t.e.event_ts %}{% if t.e.recipient %} · {{ t.e.recipient }}{% endif %}</span></div>
+        {% for d in t.detail.diagnostic %}{% if d %}<div class="tl-code">{{ d }}</div>{% endif %}{% endfor %}
+        {% if t.detail.smtpResponse %}<div class="tl-code">{{ t.detail.smtpResponse }}</div>{% endif %}
+        {% if t.what %}<div class="callout callout-{% if t.e.event_type == 'deliverydelay' %}warn{% else %}info{% endif %}" role="note"><div>{% icon "info" %}</div><div><div class="callout-title">{{ t.what }}</div><p>{{ t.todo }}</p></div></div>{% endif %}
+      </div>
+    </li>
+  {% empty %}<li>{% trans "No events recorded for this message yet." %}</li>{% endfor %}
+  </ol>
+</div>
+
+<div class="tabpanel" role="tabpanel" id="{{ pfx }}-p-rc" aria-labelledby="{{ pfx }}-t-rc" hidden>
+  <table class="table"><thead><tr><th>{% trans "Address" %}</th><th>{% trans "Status" %}</th><th><span class="sr-only">{% trans "Flags" %}</span></th></tr></thead><tbody>
+  {% for r in recipients %}<tr><td class="mono">{{ r.address }}</td><td>{% state_badge r.state %}</td>
+    <td class="col-actions">{% if r.address_lower in suppressed %}<a class="badge badge-warn" href="/suppression/?q={{ r.address|urlencode }}">{% trans "On suppression list" %}</a>{% endif %}</td></tr>{% endfor %}
+  </tbody></table>
+</div>
+
+<div class="tabpanel" role="tabpanel" id="{{ pfx }}-p-dt" aria-labelledby="{{ pfx }}-t-dt" hidden>
+  <dl class="kv">
+    <dt>{% trans "From" %}</dt><dd class="mono">{{ m.from_addr }}</dd>
+    <dt>{% trans "Subject" %}</dt><dd>{{ m.subject|default:"—" }}</dd>
+    <dt>{% trans "Sent" %}</dt><dd>{{ m.sent_at|date:"d M Y H:i:s" }} UTC</dd>
+    <dt>{% trans "App" %}</dt><dd>{{ m.source_app|default:"—" }}</dd>
+    <dt>{% trans "Category" %}</dt><dd>{{ m.mail_category|default:"—" }}</dd>
+    <dt>{% trans "Configuration set" %}</dt><dd class="mono">{{ m.config_set|default:"—" }}</dd>
+    <dt>{% trans "Region" %}</dt><dd>{{ m.region }}</dd>
+    <dt>{% trans "SES message ID" %}</dt><dd><button class="id-chip" type="button" data-copy="{{ m.ses_message_id }}" title="{% trans 'Copy' %}">{{ m.ses_message_id }}{% icon "copy" "icon-sm" %}</button></dd>
+  </dl>
+</div>
+
+<div class="tabpanel" role="tabpanel" id="{{ pfx }}-p-bd" aria-labelledby="{{ pfx }}-t-bd" hidden>
+  {% if can_body %}
+    <div class="callout callout-warn" role="note"><div>{% icon "lock" %}</div><div><div class="callout-title">{% trans "Message body is protected" %}</div><p>{% trans "Opening it needs a reason and a passkey check, and is recorded in the audit log. Links and codes stay redacted." %}</p></div></div>
+    <form class="stack" method="post" action="{% url 'message_body' m.pk %}">{% csrf_token %}
+      <div class="field"><label class="label" for="{{ pfx }}-reason">{% trans "Why do you need to read this email?" %}</label><input class="input" id="{{ pfx }}-reason" name="reason" required placeholder="{% trans 'For example: customer ticket #4411' %}"></div>
+      <div><button class="btn btn-primary">{% trans "Open redacted body" %}</button></div>
+    </form>
+  {% else %}
+    {% include "components/_empty.html" with icon="lock" title=_("No body stored for this message") text=_("Only mail categories you opt in keep their content. This message has events and metadata only.") %}
+  {% endif %}
+</div>

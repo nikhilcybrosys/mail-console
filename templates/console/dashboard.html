@@ -1,0 +1,87 @@
+{% extends "base.html" %}{% load i18n ui static %}
+{% block title %}{% trans "Overview" %}{% endblock %}
+{% block crumbs %}<span aria-current="page">{% trans "Overview" %}</span>{% endblock %}
+{% block head %}<link rel="stylesheet" href="{% static 'vendor/uplot/uPlot.min.css' %}">{% endblock %}
+{% block content %}
+<div class="ph">
+  <div><h1>{% trans "Overview" %}</h1><p>{% blocktrans %}Delivery health for {{ current_region }}.{% endblocktrans %} {% if last_event %}{% trans "Last event" %} {% ago last_event %}.{% endif %}</p></div>
+  <div class="ph-actions">
+    <div class="btn-group" role="group" aria-label="{% trans 'Time range' %}">
+      <a class="btn btn-sm" href="?window=24h" {% if window == '24h' %}aria-current="true"{% endif %}>24h</a>
+      <a class="btn btn-sm" href="?window=7d" {% if window == '7d' %}aria-current="true"{% endif %}>7d</a>
+      <a class="btn btn-sm" href="?window=30d" {% if window == '30d' %}aria-current="true"{% endif %}>30d</a>
+    </div>
+  </div>
+</div>
+
+{% if attention %}
+<div class="attention" aria-label="{% trans 'Needs attention' %}">
+  {% for a in attention %}
+  <div class="attention-item">{% icon a.icon %}<span class="grow">{{ a.text }}</span><span class="badge badge-{{ a.tone }}">{% if a.tone == "err" %}{% trans "Urgent" %}{% elif a.tone == "warn" %}{% trans "Warning" %}{% else %}{% trans "Review" %}{% endif %}</span><a class="btn btn-sm" href="{{ a.url }}">{{ a.cta }}</a></div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if snap %}
+<div class="health">
+  {% if snap.production_access %}<span class="badge badge-ok">{% trans "Production access" %}</span>{% else %}<span class="badge badge-warn">{% trans "Sandbox: verified recipients only" %}</span>{% endif %}
+  {% if snap.sending_enabled %}<span class="badge badge-ok">{% trans "Sending on" %}</span>{% else %}<span class="badge badge-err">{% trans "Sending paused" %}</span>{% endif %}
+  <span class="badge {% if snap.enforcement_status == 'HEALTHY' %}badge-ok{% else %}badge-err{% endif %}">{% trans "Account" %} {{ snap.enforcement_status|default:"unknown"|lower }}</span>
+  <span class="badge badge-plain">{% trans "Daily quota" %} {{ quota_pct }}% ({{ snap.sent_last_24h|floatformat:0 }} / {{ snap.max_24h_send|floatformat:0 }})</span>
+</div>
+{% endif %}
+
+<div class="kpis">
+  {% for t in tiles %}
+  <div class="card kpi">
+    <div class="kpi-label">{{ t.label }}</div>
+    <div class="kpi-value">{% if t.kind == "count" %}{{ t.value|compact }}{% elif t.kind == "pct3" %}{{ t.value|pct:3 }}{% else %}{{ t.value|pct:1 }}{% endif %}</div>
+    <div class="kpi-foot">
+      <span class="delta delta-{{ t.delta.tone }}">{% if t.delta.dir == "up" %}{% icon "arrow-up" "icon-sm" %}{% elif t.delta.dir == "down" %}{% icon "arrow-down" "icon-sm" %}{% endif %}{{ t.delta.text }}</span>
+      {% if t.spark %}<svg class="spark" viewBox="0 0 84 26" aria-hidden="true"><polyline points="{{ t.spark }}"/></svg>{% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="grid-main">
+  <section class="card" aria-labelledby="chart-h">
+    <div class="card-head">
+      <div><div class="card-title" id="chart-h">{% trans "Delivery over time" %}</div><div class="card-desc">{% trans "Counts per bucket. Times are shown in your local time zone." %}</div></div>
+      <div class="chart-legend" data-legend-for="chart-data">
+        {% for s in chart.series %}<button class="legend-btn" type="button" data-series="{{ s.key }}" aria-pressed="true"><i></i>{{ s.label }}</button>{% endfor %}
+      </div>
+    </div>
+    <div class="chart-box"><div class="chart" data-chart="chart-data" role="img" aria-label="{% trans 'Line chart of sent, delivered, bounced and complaint counts over time' %}"></div></div>
+    {{ chart|json_script:"chart-data" }}
+  </section>
+
+  <section class="card" aria-labelledby="rep-h">
+    <div class="card-head"><div><div class="card-title" id="rep-h">{% trans "Reputation" %} <span class="badge badge-info badge-plain">{% trans "estimate" %}</span></div><div class="card-desc">{% blocktrans with n=sample %}From {{ n }} sends. Authoritative rates are in CloudWatch.{% endblocktrans %}</div></div></div>
+    <div class="card-body">
+      {% for m in meters %}
+      <div class="rep-row">
+        <div class="rep-head"><span>{{ m.label }}</span><b>{{ m.rate|pct:m.digits }}</b></div>
+        {% meter m.fill m.tone %}
+        <div class="help">{% blocktrans with p=m.review|pct:1 %}AWS reviews the account at {{ p }}.{% endblocktrans %}</div>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+</div>
+<br>
+<div class="grid-2">
+  <section class="card" aria-labelledby="reasons-h">
+    <div class="card-head"><div class="card-title" id="reasons-h">{% trans "Why mail bounced" %}</div></div>
+    {% if reasons %}<ul class="list">{% for r in reasons %}<li><span class="spacer"><span class="cell-primary">{{ r.type }}</span> <span class="muted">{{ r.subtype }}</span></span><span class="reason-bar">{% meter r.fill "err" %}</span><span class="num">{{ r.count }}</span></li>{% endfor %}</ul>
+    {% else %}{% include "components/_empty.html" with icon="circle-check" title=_("No bounces in this period") text=_("When mail bounces, the most common reasons will show here.") %}{% endif %}
+  </section>
+  <section class="card" aria-labelledby="apps-h">
+    <div class="card-head"><div class="card-title" id="apps-h">{% trans "Top senders" %}</div><div class="card-actions"><a class="btn btn-sm" href="{% url 'messages' %}">{% trans "View sent mail" %}</a></div></div>
+    {% if apps %}<table class="table"><thead><tr><th>{% trans "App" %}</th><th>{% trans "Domain" %}</th><th class="col-num">{% trans "Emails" %}</th><th class="col-num">{% trans "Problems" %}</th></tr></thead><tbody>
+      {% for a in apps %}<tr><td class="cell-primary">{{ a.source_app|default:"Untagged" }}</td><td class="muted">{{ a.from_domain }}</td><td class="col-num num">{{ a.n }}</td><td class="col-num num">{% if a.bad %}<span class="badge badge-err badge-plain">{{ a.bad }}</span>{% else %}0{% endif %}</td></tr>{% endfor %}</tbody></table>
+    {% else %}{% include "components/_empty.html" with icon="mail" title=_("No mail yet") text=_("Send a test email through a configuration set to see activity here.") %}{% endif %}
+  </section>
+</div>
+{% endblock %}
+{% block page_js %}<script src="{% static 'vendor/uplot/uPlot.iife.min.js' %}" defer></script><script src="{% static 'js/charts.js' %}" defer></script>{% endblock %}

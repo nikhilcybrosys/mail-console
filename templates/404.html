@@ -1,0 +1,4 @@
+{% extends "base.html" %}{% load i18n ui %}
+{% block title %}Page not found{% endblock %}
+{% block content %}<div class="err-page"><div class="empty"><div class="empty-icon">{% icon "search" "icon-lg" %}</div><h3>{% trans "Page not found" %}</h3><p>{% trans "The page doesn't exist, or it belongs to a domain outside your access." %}</p><a class="btn" href="/">{% trans "Go to overview" %}</a></div></div>{% endblock %}
+{% block anon %}<main class="err-page" id="main"><div class="empty"><div class="empty-icon">{% icon "search" "icon-lg" %}</div><h3>{% trans "Page not found" %}</h3><p>{% trans "The page doesn't exist, or it belongs to a domain outside your access." %}</p><a class="btn" href="/login/">{% trans "Go to sign in" %}</a></div></main>{% endblock %}

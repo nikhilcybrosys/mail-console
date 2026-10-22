@@ -1,0 +1,7 @@
+{% extends "base.html" %}{% load i18n ui %}
+{% block title %}{% trans "Message body" %}{% endblock %}
+{% block crumbs %}<a href="{% url 'messages' %}">{% trans "Sent mail" %}</a><span class="sep">/</span><span aria-current="page">{% trans "Body" %}</span>{% endblock %}
+{% block content %}
+<div class="ph"><div><h1>{{ title|default:_("Message body") }}</h1><p>{% trans "Sanitized and redacted. Scripts, images, forms and links are disabled. This view expires in 60 seconds." %}</p></div></div>
+<iframe class="mail-frame" src="{{ frame_url }}" sandbox referrerpolicy="no-referrer" title="{% trans 'Message body' %}"></iframe>
+{% endblock %}

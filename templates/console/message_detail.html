@@ -1,0 +1,11 @@
+{% extends "base.html" %}{% load i18n ui %}
+{% block title %}{{ m.subject|default:_("Message") }}{% endblock %}
+{% block crumbs %}<a href="{% url 'messages' %}">{% trans "Sent mail" %}</a><span class="sep">/</span><span class="truncate" aria-current="page">{{ m.subject|default:_("Message") }}</span>{% endblock %}
+{% block content %}
+<div class="ph">
+  <div><div class="row">{% state_badge m.final_state %}<span class="muted">{% ago m.sent_at %}</span></div><h1>{{ m.subject|default:_("(no subject)") }}</h1>
+  <p><button class="id-chip" type="button" data-copy="{{ m.ses_message_id }}">{{ m.ses_message_id }}{% icon "copy" "icon-sm" %}</button></p></div>
+  <div class="ph-actions"><a class="btn" href="{% url 'messages' %}">{% trans "Back to sent mail" %}</a></div>
+</div>
+<div class="card"><div class="card-body">{% include "console/_message_panels.html" with pfx="p" %}</div></div>
+{% endblock %}

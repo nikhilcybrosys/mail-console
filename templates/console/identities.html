@@ -1,0 +1,39 @@
+{% extends "base.html" %}{% load i18n ui %}
+{% block title %}{% trans "Domains and DNS" %}{% endblock %}
+{% block crumbs %}<span aria-current="page">{% trans "Domains and DNS" %}</span>{% endblock %}
+{% block content %}
+<div class="ph"><div><h1>{% trans "Domains and DNS" %}</h1><p>{% trans "Every sending identity, with the DNS records it needs next to what is actually published." %}</p></div></div>
+{% if items %}
+  {% if failing_total %}<div class="callout callout-warn stack-gap" role="status"><div>{% icon "triangle-alert" %}</div><div><div class="callout-title">{% blocktrans with n=failing_total t=checks_total %}{{ n }} of {{ t }} DNS checks need attention{% endblocktrans %}</div><p>{% trans "Mail can still send, but receivers may treat it as unauthenticated or reject it." %}</p></div></div>
+  {% else %}<div class="callout callout-ok stack-gap" role="status"><div>{% icon "circle-check" %}</div><div><div class="callout-title">{% trans "All DNS checks are passing" %}</div></div></div>{% endif %}
+  <div class="stack">
+  {% for it in items %}
+  <section class="card" aria-labelledby="id-{{ forloop.counter }}">
+    <div class="card-head">
+      <div><div class="card-title mono" id="id-{{ forloop.counter }}">{{ it.i.identity }}</div><div class="card-desc">{% blocktrans with t=it.i.identity_type|default:"identity" r=it.i.region %}{{ t }} in {{ r }}{% endblocktrans %}</div></div>
+      <div class="card-actions">
+        {% if it.i.verified %}<span class="badge badge-ok">{% trans "Verified" %}</span>{% else %}<span class="badge badge-err">{% trans "Not verified" %}</span>{% endif %}
+        <span class="badge {% if it.i.dkim_status == 'SUCCESS' %}badge-ok{% else %}badge-warn{% endif %}">DKIM {{ it.i.dkim_status|default:"unknown"|lower }}</span>
+      </div>
+    </div>
+    {% if not it.i.default_config_set %}<div class="card-body"><div class="callout callout-err" role="note"><div>{% icon "circle-alert" %}</div><div><div class="callout-title">{% trans "No default configuration set" %}</div><p>{% trans "Mail from this identity produces no events, so it will not appear in Sent mail. Set a default configuration set with an event destination." %}</p></div></div></div>{% endif %}
+    <div class="card-body"><dl class="kv">
+      <dt>{% trans "Default configuration set" %}</dt><dd class="mono">{{ it.i.default_config_set|default:"none" }}</dd>
+      <dt>{% trans "MAIL FROM domain" %}</dt><dd class="mono">{{ it.i.mail_from_domain|default:"SES default (amazonses.com)" }}</dd>
+      <dt>{% trans "DKIM signing" %}</dt><dd>{% if it.i.dkim_signing_origin == "EXTERNAL" %}{% trans "Your own key (BYODKIM)" %}{% else %}{% trans "Easy DKIM (keys rotate automatically)" %}{% endif %}</dd>
+    </dl></div>
+    <div class="table-wrap table-flush">
+      <table class="table"><thead><tr><th>{% trans "Check" %}</th><th>{% trans "Result" %}</th><th>{% trans "Expected" %}</th><th>{% trans "Found" %}</th></tr></thead><tbody>
+      {% for c in it.checks %}<tr>
+        <td class="cell-primary">{{ c.record_kind|dns_label }}</td>
+        <td>{% if c.ok %}<span class="badge badge-ok">{% trans "Passing" %}</span>{% else %}<span class="badge badge-err">{% trans "Needs fix" %}</span>{% endif %}</td>
+        <td class="mono">{{ c.expected|join:" | " }}</td>
+        <td class="mono">{{ c.actual|join:" | "|default:"(nothing published)" }}{% if c.detail and not c.ok %}<div class="cell-secondary">{{ c.detail }}</div>{% endif %}</td>
+      </tr>{% empty %}<tr><td colspan="4" class="muted">{% trans "DNS has not been checked yet. It runs with every state sync." %}</td></tr>{% endfor %}
+      </tbody></table>
+    </div>
+  </section>
+  {% endfor %}
+  </div>
+{% else %}<div class="card">{% include "components/_empty.html" with icon="globe" title=_("No identities synced yet") text=_("Run the state sync to read your SES identities for this region.") %}</div>{% endif %}
+{% endblock %}

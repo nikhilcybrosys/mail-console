@@ -1,0 +1,19 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DenyAllSesSendingInMailConsoleAccount",
+      "Effect": "Deny",
+      "Action": [
+        "ses:SendEmail",
+        "ses:SendBulkEmail",
+        "ses:SendRawEmail",
+        "ses:SendTemplatedEmail",
+        "ses:SendBulkTemplatedEmail",
+        "ses:SendCustomVerificationEmail",
+        "ses:SendBounce"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

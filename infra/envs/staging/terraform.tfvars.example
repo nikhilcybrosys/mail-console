@@ -1,0 +1,19 @@
+# Copy to terraform.tfvars (git-ignored). No secrets belong in this file.
+aws_account_id = "000000000000" # the NEW dedicated account id
+
+domain_name          = "mail-console-staging.example.com"
+mailview_domain_name = "mailview-example-staging.net" # separate registrable domain
+inbound_domain       = "inbound-staging.example.com"
+certificate_arn      = "arn:aws:acm:ap-south-1:000000000000:certificate/REPLACE"
+# mailview_certificate_arn = "arn:aws:acm:ap-south-1:000000000000:certificate/REPLACE"
+
+image_tag = "REPLACE-git-sha"
+
+alert_email_addresses = ["ops@example.com"]
+# trusted_admin_principal_arns = ["arn:aws:iam::000000000000:role/terraform-admin"]
+
+# Cost levers (see COST.md): each interface endpoint ~USD 8-10 per AZ per month.
+# interface_endpoint_services = ["sqs", "secretsmanager", "ecr.api", "ecr.dkr", "logs", "sts"]
+# enable_inbound              = true   # Mail Manager ingress ~USD 50/month
+allowed_email_domain  = "example.com" # REQUIRED: your organisation's e-mail domain
+oidc_discovery_url   = "https://accounts.google.com/.well-known/openid-configuration" # use a tenant-specific URL for Microsoft Entra

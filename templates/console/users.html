@@ -1,0 +1,24 @@
+{% extends "base.html" %}{% load i18n ui %}
+{% block title %}{% trans "Users and roles" %}{% endblock %}
+{% block crumbs %}<span aria-current="page">{% trans "Users and roles" %}</span>{% endblock %}
+{% block content %}
+<div class="ph"><div><h1>{% trans "Users and roles" %}</h1><p>{% trans "Sign-in is through your identity provider. New people are added with the create_console_user command, then given a role here." %}</p></div></div>
+<div class="grid-main">
+<div class="table-wrap">
+<table class="table"><thead><tr><th>{% trans "Person" %}</th><th>{% trans "Role" %}</th><th>{% trans "Status" %}</th><th>{% trans "Last sign-in" %}</th><th><span class="sr-only">{% trans "Save" %}</span></th></tr></thead><tbody>
+{% for u in users %}<tr>
+  <td><div class="cell-primary">{{ u.email }}</div>{% if u.scope_domains %}<div class="cell-secondary">{% trans "Limited to" %} {{ u.scope_domains|join:", " }}</div>{% endif %}</td>
+  <td><select class="select select-auto" name="role" form="uf-{{ u.pk }}" aria-label="{% blocktrans with e=u.email %}Role for {{ e }}{% endblocktrans %}">{% for r in roles %}<option value="{{ r }}" {% if r == u.role %}selected{% endif %}>{{ r|cut:"_"|title }}</option>{% endfor %}</select></td>
+  <td><select class="select select-auto" name="active" form="uf-{{ u.pk }}" aria-label="{% blocktrans with e=u.email %}Status for {{ e }}{% endblocktrans %}"><option value="1" {% if u.is_active %}selected{% endif %}>{% trans "Active" %}</option><option value="0" {% if not u.is_active %}selected{% endif %}>{% trans "Deactivated" %}</option></select></td>
+  <td class="muted">{% if u.last_login %}{% ago u.last_login %}{% else %}{% trans "Never" %}{% endif %}</td>
+  <td class="col-actions"><form id="uf-{{ u.pk }}" method="post" action="{% url 'user_update' u.pk %}">{% csrf_token %}<button class="btn btn-sm">{% trans "Save" %}</button></form></td>
+</tr>{% endfor %}</tbody></table></div>
+<section class="card" aria-labelledby="roles-h"><div class="card-head"><div class="card-title" id="roles-h">{% trans "What each role can do" %}</div></div>
+<dl class="card-body kv kv-narrow">
+  <dt>{% trans "Viewer" %}</dt><dd>{% trans "Sees delivery data and health. No message bodies." %}</dd>
+  <dt>{% trans "Support" %}</dt><dd>{% trans "Also reads redacted bodies and the inbox, and removes single suppressions." %}</dd>
+  <dt>{% trans "Deliverability admin" %}</dt><dd>{% trans "Also does bulk suppression changes and approves requests." %}</dd>
+  <dt>{% trans "Security admin" %}</dt><dd>{% trans "Also changes identities, DKIM and event destinations, and manages users." %}</dd>
+</dl></section>
+</div>
+{% endblock %}
