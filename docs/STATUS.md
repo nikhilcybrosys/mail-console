@@ -36,7 +36,13 @@ Nothing here has been run against a real AWS account.
   and nothing has been deployed: there is no image registry or deployment pipeline yet. Environment names match the app
   (checked by script), and `/healthz/` and the worker heartbeat file exist.
 
-## Before publishing the repository
-- Enable GitHub private vulnerability reporting (`SECURITY.md` points to it) and branch protection that requires the CI jobs.
-- Decide whether to move to Django 6 (Dependabot proposed it; the tests pass there) or stay on 5.2 LTS.
-- Have the licence and copyright holder reviewed.
+## Repository
+Public under Apache-2.0. GitHub settings in place: private vulnerability reporting (what `SECURITY.md` points to), secret
+scanning with push protection, Dependabot alerts and security updates, and `main` protected (the CI jobs must pass, branches
+must be up to date, no force-pushes or deletions; the owner can still push directly in an emergency).
+
+Still open:
+- Decide whether to move to Django 6 or stay on 5.2 LTS (major Django bumps are ignored in `.github/dependabot.yml`; the tests
+  do pass on a newer Django).
+- Have the licence and copyright holder wording reviewed.
+- Try it against a real AWS account (see "What works" for what is unverified).
