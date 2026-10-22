@@ -1,8 +1,35 @@
 # Mail Console
 
-Secure internal console for Amazon SES: sent-mail log with event timelines, suppression management,
-identity/DNS health, alerts, approvals and a tamper-evident audit log. Django 5.2 + HTMX, PostgreSQL 16.
-Project status and known gaps: `docs/STATUS.md`.
+A secure management and monitoring console for Amazon SES. See what happened to every email, fix deliverability
+problems, and change SES settings safely, without opening the AWS console. Django 5.2 + HTMX, PostgreSQL 16, no Node
+toolchain.
+
+<p align="center">
+  <img src="docs/screenshots/overview-light.png" alt="Overview: delivery health, alerts, KPIs, delivery chart and reputation" width="49%">
+  <img src="docs/screenshots/overview-dark.png" alt="The same overview in dark mode" width="49%">
+</p>
+
+## What it does
+- **Sent mail:** every message SES accepted, with its delivery timeline. Bounces come with a plain-language explanation
+  and what to do next.
+- **Suppression list:** search it, remove a single address with a passkey check, or remove many through an approval.
+- **Domains and DNS:** each sending identity next to the DKIM, SPF and DMARC records it needs, expected against found.
+- **Alerts:** DNS problems, enforcement or sending paused, and no events arriving.
+- **Safe changes:** every change to SES asks for a passkey, and risky ones (bulk suppression removal, pausing sending,
+  identity and event-destination changes) also need a second person to approve. Changes run with narrowly scoped AWS
+  roles that can never send mail.
+- **Tamper-evident audit log:** every sign-in, change and message-body view, hash-chained so edits show.
+
+<p align="center">
+  <img src="docs/screenshots/message-drawer.png" alt="Sent mail list with a message's timeline and bounce explanation open in a side drawer" width="49%">
+  <img src="docs/screenshots/domains-and-dns.png" alt="Domains and DNS: DKIM, SPF and DMARC checks with expected and found values" width="49%">
+</p>
+<p align="center">
+  <img src="docs/screenshots/approvals.png" alt="Approvals: a second person must approve risky changes" width="49%">
+  <img src="docs/screenshots/audit-log-dark.png" alt="Audit log with hash-chain verification" width="49%">
+</p>
+
+The screenshots use synthetic demo data. Project status and known gaps: [docs/STATUS.md](docs/STATUS.md).
 
 ## Try it (demo with synthetic data)
     docker compose up --build
@@ -14,7 +41,7 @@ and is bound to `127.0.0.1`: it is for looking around, never for a real deployme
 ## Connect it to your AWS account
 `aws/README.md` has the few CLI commands and the IAM policy files you need: an SNS topic and SQS queue that receive SES
 events, and three roles (read-only, plus two narrow write roles) that can never send mail. There is no hosting stack to
-apply: run the container on any small server. This has not yet been run against a real AWS account.
+apply: run the container on any small server. The steps have been applied to a real production account and checked there.
 
 ## Local development
     python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
