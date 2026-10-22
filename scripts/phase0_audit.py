@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """Phase 0: READ-ONLY audit of the real SES state. Run by a human with their own AWS profile.
 
-    AWS_PROFILE=<profile> python scripts/phase0_audit.py --regions ap-south-1 us-east-1 --out phase0-report.md
+    AWS_PROFILE=<profile> python scripts/phase0_audit.py --regions ap-south-1 us-east-1
+
+The report contains account details and IAM key suffixes, so it is written OUTSIDE the repository (default:
+~/ses-audit-report.json) and the script refuses to write inside it. Never commit or share it.
 
 Safety: every boto3 client is wrapped so ONLY get_/list_/describe_ calls can execute; any other
 method raises before reaching AWS. It never prints credentials and never reads SMTP passwords.
@@ -11,9 +14,21 @@ which IAM users can send via SES (the stray N. Virginia ses-smtp-user)?
 import argparse
 import datetime as dt
 import json
+import pathlib
 import sys
 
 import boto3
+
+REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
+
+
+def resolve_out(path):
+    """Where to write the report. Refuses any location inside this repository (it is public)."""
+    out = pathlib.Path(path).expanduser().resolve()
+    if out == REPO_ROOT or REPO_ROOT in out.parents:
+        raise SystemExit(f"refusing to write the report inside the repository ({out}): it contains account details. Choose a path outside it.")
+    return out
+
 
 ALLOWED_PREFIXES = ("get_", "list_", "describe_", "batch_get_", "can_paginate", "get_paginator", "meta", "exceptions")
 
@@ -103,14 +118,16 @@ def audit_iam():
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--regions", nargs="+", default=["ap-south-1"])
-    ap.add_argument("--out", default="phase0-report.json")
+    ap.add_argument("--out", default="~/ses-audit-report.json", help="must be outside the repository")
     a = ap.parse_args()
+    out_path = resolve_out(a.out)  # fail before touching AWS
     who = safe(client("sts").get_caller_identity)
     report = {"generated": dt.datetime.now(dt.timezone.utc).isoformat(), "caller": {k: who.get(k) for k in ("Account", "Arn")} if "_error" not in who else who,
               "regions": [audit_region(r) for r in a.regions], "iam_ses_related_users": audit_iam()}
-    with open(a.out, "w") as fh:
+    with open(out_path, "w") as fh:
         json.dump(report, fh, indent=2, default=str)
-    print(f"wrote {a.out}")
+    out_path.chmod(0o600)  # owner-only
+    print(f"wrote {out_path} (private: contains account details, do not commit or share)")
     for r in report["regions"]:
         acc = r["account"]
         print(f"[{r['region']}] production={acc.get('production_access') if isinstance(acc, dict) else '?'} identities={len(r['identities'])} "
