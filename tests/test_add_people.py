@@ -60,7 +60,8 @@ def test_duplicates_are_refused_ignoring_case_and_the_role_must_exist():
 
 
 def test_an_account_stored_with_different_capitalisation_still_counts_as_a_duplicate():
-    User.objects.create_user("Mixed.Case@Example.com", role=VIEWER)      # older data need not be lowercase
+    u = User.objects.create_user("mixed.case@example.com", role=VIEWER)
+    User.objects.filter(pk=u.pk).update(email="Mixed.Case@Example.com")  # the manager lowercases; older or imported data need not be
     assert any("already has an account" in e for e in provisioning.check_new_user("mixed.case@example.com", VIEWER, "", "")[1])
 
 
