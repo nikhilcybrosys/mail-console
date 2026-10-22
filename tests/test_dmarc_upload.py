@@ -360,3 +360,8 @@ def test_the_page_labels_uploaded_reports_as_not_verified_and_the_upload_page_sa
     c, _ = login(DELIVERABILITY_ADMIN, "d@example.com")
     assert "uploaded, not verified" in c.get(reverse("dmarc")).content.decode()
     assert "taken at face value" in c.get(reverse("dmarc_upload")).content.decode()
+
+
+def test_a_parser_failure_is_shown_as_a_plain_sentence_without_exception_names():
+    d = ingest(up(b"this is not a dmarc report"))[0].detail
+    assert d == "the file is not a valid DMARC aggregate report" and "ParseError" not in d

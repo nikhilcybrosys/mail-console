@@ -110,7 +110,9 @@ def ingest(files, uploader, *, allowed=None, now=None):
                 raise dmarc.DmarcError("file is too large")
             cleaned = clean_report(dmarc.parse(dmarc.unpack(raw, name)), now)
         except dmarc.DmarcError as exc:
-            results.append(Result(name, "error", str(exc)))
+            # The parser's "unparseable report: <ExceptionName>" is for logs; people get a plain sentence.
+            why = "the file is not a valid DMARC aggregate report" if str(exc).startswith("unparseable") else str(exc)
+            results.append(Result(name, "error", why))
             continue
         except Exception as exc:  # noqa: BLE001: bad zip/gzip data, odd XML values: say "unreadable", log only the kind
             log.warning("dmarc upload: unreadable file (%s)", type(exc).__name__)
