@@ -1,7 +1,9 @@
+import hmac
 import logging
+import time
 
 from django.conf import settings
-from django.http import HttpResponse
+from django.http import Http404, HttpResponse
 from django.views.decorators.http import require_GET
 
 log = logging.getLogger(__name__)
@@ -42,4 +44,34 @@ def theme_css(request):
             css = f":root,[data-theme]{{--accent:{accent};--btn-primary:{accent};--btn-primary-hover:{hover};--accent-text:{_darken(accent, 0.8)}}}\n"
     resp = HttpResponse(css, content_type="text/css; charset=utf-8")
     resp["Cache-Control"] = "public, max-age=300"
+    return resp
+
+
+_METRICS_CACHE = {"at": 0.0, "body": ""}
+
+
+@require_GET
+def metrics_view(request):
+    """Prometheus scrape endpoint. Not found unless MC_METRICS_TOKEN is set, then bearer-token only (no session, no cookies).
+
+    A scrape is not a person acting, so successful scrapes are not written to the audit log (one row per scrape would
+    bury it); a bad token is logged. The body is cached briefly so scrapers cannot turn this into database load.
+    """
+    token = settings.METRICS_TOKEN
+    if not token:
+        raise Http404
+    header = request.META.get("HTTP_AUTHORIZATION", "")
+    given = header[7:].strip() if header[:7].lower() == "bearer " else ""
+    if not given or not hmac.compare_digest(given.encode(), token.encode()):
+        log.warning("metrics: rejected a scrape with a missing or wrong token")
+        resp = HttpResponse("unauthorized\n", status=401, content_type="text/plain")
+        resp["WWW-Authenticate"] = "Bearer"
+        return resp
+    now = time.monotonic()
+    if now - _METRICS_CACHE["at"] >= settings.METRICS_CACHE_SECONDS or not _METRICS_CACHE["body"]:
+        from apps.core.prom import render
+        from apps.sesdata.promstats import collect
+        _METRICS_CACHE.update(at=now, body=render(collect()))
+    resp = HttpResponse(_METRICS_CACHE["body"], content_type="text/plain; version=0.0.4; charset=utf-8")
+    resp["Cache-Control"] = "no-store"
     return resp

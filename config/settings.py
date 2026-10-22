@@ -236,6 +236,13 @@ if ALERT_QUIET_HOURS.strip():
     except ZoneInfoNotFoundError:
         raise ImproperlyConfigured(f"MC_ALERT_QUIET_TZ {ALERT_QUIET_TZ!r} is not a known time zone (use e.g. Asia/Kolkata).") from None
 
+# Prometheus scrape endpoint (/metrics). Off unless a token is set; aggregate numbers only, never addresses or subjects.
+METRICS_TOKEN = env("MC_METRICS_TOKEN", "")
+if METRICS_TOKEN and len(METRICS_TOKEN) < 32:
+    from django.core.exceptions import ImproperlyConfigured
+    raise ImproperlyConfigured("MC_METRICS_TOKEN must be at least 32 characters (try: python -c 'import secrets; print(secrets.token_urlsafe(32))').")
+METRICS_CACHE_SECONDS = 10  # one database pass per this many seconds, however many scrapers ask
+
 # --- White-labelling: name, logo and accent are configurable ------------------------------
 BRAND_NAME = env("MC_BRAND_NAME", "Mail Console")
 BRAND_LOGO = env("MC_BRAND_LOGO", "brand/mark.svg")  # static path; dark variant used on dark theme
