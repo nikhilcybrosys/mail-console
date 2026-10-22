@@ -103,6 +103,8 @@ Config sets are `prevent_destroy`: deleting a set that is an identity's default 
 - **D6** Accept THREE_MONTHS archive minimum, or skip outbound body archive and store bodies in the app.
 
 ## Provider lock files
-
-`envs/*/.terraform.lock.hcl` currently hold the darwin_arm64 hash only (the registry was unreachable for multi-platform locking). Before CI/Linux use:
-`terraform providers lock -platform=linux_amd64 -platform=linux_arm64 -platform=darwin_amd64 -platform=darwin_arm64`.
+`envs/*/.terraform.lock.hcl` record checksums for linux_amd64, linux_arm64, darwin_amd64 and darwin_arm64, so `terraform init`
+verifies the provider on a laptop and in CI. Both environments share one provider version, so the two files are identical.
+When you bump the provider, regenerate them (this downloads the provider once per platform, so it is slow):
+`terraform providers lock -platform=linux_amd64 -platform=linux_arm64 -platform=darwin_amd64 -platform=darwin_arm64`
+and copy the result to the other environment.
