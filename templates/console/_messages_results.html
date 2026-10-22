@@ -1,4 +1,10 @@
 {% load i18n ui %}
+{% if saved_views or view_params %}<div class="chips" aria-label="{% trans 'Saved views' %}">
+  {% for v in saved_views %}<span class="chip chip-view"><a href="{{ v.url }}" hx-get="{{ v.url }}" hx-target="#results" hx-push-url="true">{{ v.name }}</a>
+    <form method="post" action="{% url 'saved_view_delete' v.pk %}">{% csrf_token %}<button type="submit" aria-label="{% blocktrans with n=v.name %}Delete saved view {{ n }}{% endblocktrans %}">{% icon "x" "icon-sm" %}</button></form></span>{% endfor %}
+  {% if view_params %}<details class="save-view"><summary class="btn btn-sm">{% trans "Save this view" %}</summary>
+    <form method="post" action="{% url 'saved_view_save' %}">{% csrf_token %}<input type="hidden" name="params" value="{{ view_params }}"><input class="input" name="name" maxlength="80" required aria-label="{% trans 'Name for this view' %}" placeholder="{% trans 'Name, e.g. Billing bounces' %}"><button class="btn btn-sm btn-primary" type="submit">{% trans "Save" %}</button></form></details>{% endif %}
+</div>{% endif %}
 <nav class="tabs" aria-label="{% trans 'Filter by status' %}">
   {% for t in tabs %}<a class="tab" href="{{ t.url }}" hx-get="{{ t.url }}" hx-target="#results" hx-push-url="true" {% if t.active %}aria-current="page"{% endif %}>{{ t.label }}<span class="count num">{{ t.count }}</span></a>{% endfor %}
 </nav>
@@ -22,6 +28,7 @@
 </table>
 <div class="table-foot">
   <span class="num">{% blocktrans with a=page.start_index b=page.end_index n=page.paginator.count %}Showing {{ a }}–{{ b }} of {{ n }}{% endblocktrans %}</span><span class="spacer"></span>
+  {% if export_url %}<a class="btn btn-sm" href="{{ export_url }}">{% icon "download" %}<span>{% trans "Export CSV" %}</span></a>{% endif %}
   {% if page.has_previous %}{% qs_with page=page.previous_page_number as prev %}<a class="btn btn-sm" href="{{ prev }}" hx-get="{{ prev }}" hx-target="#results" hx-push-url="true">{% trans "Previous" %}</a>{% endif %}
   {% if page.has_next %}{% qs_with page=page.next_page_number as nxt %}<a class="btn btn-sm" href="{{ nxt }}" hx-get="{{ nxt }}" hx-target="#results" hx-push-url="true">{% trans "Next" %}</a>{% endif %}
 </div>

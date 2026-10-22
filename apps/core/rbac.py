@@ -28,6 +28,7 @@ CAPABILITIES = {
     "account_attrs_write": {SECURITY_ADMIN},
     "view_setup": {DELIVERABILITY_ADMIN, SECURITY_ADMIN},
     "test_alert_channels": {DELIVERABILITY_ADMIN, SECURITY_ADMIN},
+    "export_data": {SUPPORT, DELIVERABILITY_ADMIN, SECURITY_ADMIN},
     "manage_users": {SECURITY_ADMIN},
     "approve": {DELIVERABILITY_ADMIN, SECURITY_ADMIN},
     "break_glass": {SECURITY_ADMIN},
@@ -54,9 +55,13 @@ def require_capability(capability, *, step_up=False):
             if not has_capability(request.user, capability):
                 raise PermissionDenied
             if step_up and not request.user.has_fresh_step_up(request.session):
+                from urllib.parse import urlencode
+
                 from django.http import HttpResponseRedirect
                 from django.urls import reverse
-                return HttpResponseRedirect(f"{reverse('step_up')}?next={request.get_full_path()}")
+                # Encoded: an unencoded "?a=1&b=2" would put b into the step-up URL's own query and drop it from `next`,
+                # so after the passkey the person would land on a wider page (or export) than the one they asked for.
+                return HttpResponseRedirect(f"{reverse('step_up')}?{urlencode({'next': request.get_full_path()})}")
             return view(request, *args, **kwargs)
 
         return wrapper

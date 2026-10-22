@@ -163,3 +163,10 @@ th[aria-sort="ascending"] .sort .icon,th[aria-sort="descending"] .sort .icon{opa
 .row-details{margin-top:4px}.row-details summary{cursor:pointer;color:var(--muted);font-size:var(--fs-sm)}
 .code-block{margin:6px 0 0;padding:8px 10px;border-radius:var(--r-sm);background:var(--surface-2);border:1px solid var(--border-soft);font-size:var(--fs-sm);white-space:pre-wrap;word-break:break-word;color:var(--text-2)}
 .kv-narrow{grid-template-columns:150px minmax(0,1fr)}
+
+/* Saved views: a chip with a delete button, and a disclosure for the save form */
+.chip-view{padding-right:2px;display:inline-flex;align-items:center;white-space:nowrap}.chip-view a{color:inherit;text-decoration:none;font-weight:500}
+.chip-view form{display:inline;margin:0}.chip-view button{background:none;border:0;padding:2px 4px;color:var(--muted);cursor:pointer;border-radius:var(--r-sm)}
+.chip-view button:hover{color:var(--text)}
+.save-view summary{list-style:none;cursor:pointer}.save-view summary::-webkit-details-marker{display:none}
+.save-view form{display:flex;gap:8px;margin-top:8px}

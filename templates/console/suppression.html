@@ -2,7 +2,8 @@
 {% block title %}{% trans "Suppression list" %}{% endblock %}
 {% block crumbs %}<span aria-current="page">{% trans "Suppression list" %}</span>{% endblock %}
 {% block content %}
-<div class="ph"><div><h1>{% trans "Suppression list" %}</h1><p>{% blocktrans with n=total r=current_region %}{{ n }} addresses in {{ r }}. SES will not send to these. Addresses are case-sensitive.{% endblocktrans %}</p></div></div>
+<div class="ph"><div><h1>{% trans "Suppression list" %}</h1><p>{% blocktrans with n=total r=current_region %}{{ n }} addresses in {{ r }}. SES will not send to these. Addresses are case-sensitive.{% endblocktrans %}</p></div>
+  {% if can_export %}<a class="btn" href="{% url 'suppression_export' %}{% if q %}?q={{ q|urlencode }}{% endif %}">{% icon "download" %}<span>{% trans "Export CSV" %}</span></a>{% endif %}</div>
 <form class="toolbar" method="get" action="{% url 'suppression' %}">
   <div class="input-icon grow">{% icon "search" %}<input class="input" name="q" value="{{ q }}" placeholder="{% trans 'Search by address prefix' %}" aria-label="{% trans 'Search' %}" autocomplete="off"></div>
   <button class="btn">{% trans "Search" %}</button>
