@@ -7,3 +7,7 @@ __pycache__/
 .terraform/
 staticfiles/
 .pytest_cache/
+# audit reports contain account details; scripts/phase0_audit.py also refuses to write inside the repo
+ses-audit-report*
+phase0-report*
+*audit-report*.json
