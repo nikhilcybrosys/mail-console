@@ -1,0 +1,17 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "OnlyTheConsoleAppRoleAndOnlyAsANamedSender",
+      "Effect": "Allow",
+      "Principal": {"AWS": "__APP_ROLE_ARN__"},
+      "Action": ["sts:AssumeRole", "sts:SetSourceIdentity"],
+      "Condition": {
+        "StringEquals": {
+          "sts:SourceIdentity": "__SEND_EMAILS__",
+          "sts:ExternalId": "__EXTERNAL_ID__"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "SendOneMailFromAnAllowedAddressAsANamedPerson",
+      "Effect": "Allow",
+      "Action": "ses:SendEmail",
+      "Resource": [
+        "arn:aws:ses:__REGION__:__ACCOUNT_ID__:identity/*",
+        "arn:aws:ses:__REGION__:__ACCOUNT_ID__:configuration-set/*"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "__REGION__",
+          "aws:SourceIdentity": "__SEND_EMAILS__",
+          "ses:FromAddress": "__SEND_FROM__"
+        }
+      }
+    },
+    {
+      "Sid": "NoOtherWayOfSending",
+      "Effect": "Deny",
+      "Action": ["ses:SendBulkEmail", "ses:SendRawEmail", "ses:SendCustomVerificationEmail", "ses:SendTemplatedEmail", "ses:SendBulkTemplatedEmail", "ses:SendBounce"],
+      "Resource": "*"
+    }
+  ]
+}

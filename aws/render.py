@@ -28,6 +28,9 @@ CHECKS = {
     "__SERVICE_PRINCIPAL__": (r"[a-z0-9-]+\.amazonaws\.com", "the AWS service that runs the console, such as ec2.amazonaws.com or ecs-tasks.amazonaws.com"),
 }
 APP_ROLE_NAME = "mail-console-app"
+# Compose is opt-in: these four files are only produced when --send-email and --send-from are given.
+SEND_FILES = {"send.json", "permissions-boundary-send.json", "trust-send-role.json", "app-assume-send.json"}
+LIST_TOKENS = ("__ALLOWED_EMAILS__", "__SEND_EMAILS__", "__SEND_FROM__")
 EMAIL = re.compile(r"[a-z0-9._%+-]{1,40}@([a-z0-9-]+\.)+[a-z]{2,}")  # exact, lowercase, no wildcards: SourceIdentity is matched exactly
 
 
@@ -46,6 +49,19 @@ def clean_emails(raw):
     return emails
 
 
+def clean_addresses(raw, flag, what, limit=25):
+    out = []
+    for e in raw or []:
+        e = e.strip().lower()
+        if not EMAIL.fullmatch(e) or len(e) > 64:
+            raise SystemExit(f"{flag} {e!r} is not a plain e-mail address (no wildcards; at most 64 characters)")
+        if e not in out:
+            out.append(e)
+    if len(out) > limit:
+        raise SystemExit(f"at most {limit} {what}")
+    return out
+
+
 def build_values(args):
     values = {
         "__ACCOUNT_ID__": args.account_id, "__REGION__": args.region,
@@ -56,6 +72,12 @@ def build_values(args):
         if not re.fullmatch(pattern, values[token]):
             raise SystemExit(f"{token}: {values[token]!r} is not {what}")
     values["__ALLOWED_EMAILS__"] = clean_emails(args.allowed_email)
+    send_emails = clean_addresses(getattr(args, "send_email", None), "--send-email", "people allowed to send")
+    send_from = clean_addresses(getattr(args, "send_from", None), "--send-from", "From addresses")
+    if bool(send_emails) != bool(send_from):
+        raise SystemExit("Compose needs both --send-email (who may send) and --send-from (which addresses they may send as), or neither")
+    if send_emails:
+        values["__SEND_EMAILS__"], values["__SEND_FROM__"] = send_emails, send_from
     values["__APP_ROLE_ARN__"] = f"arn:aws:iam::{values['__ACCOUNT_ID__']}:role/{APP_ROLE_NAME}"
     return values
 
@@ -64,9 +86,11 @@ def render(values):
     """Return {filename: text} for every policy, plus the SQS attributes wrapper."""
     out = {}
     for path in sorted(POLICY_DIR.glob("*.json")):
+        if path.name in SEND_FILES and "__SEND_FROM__" not in values:
+            continue  # Compose not requested: nothing about sending is rendered
         text = path.read_text()
         for token, value in values.items():
-            if token == "__ALLOWED_EMAILS__":  # a JSON array, substituted for the whole quoted token
+            if token in LIST_TOKENS:  # a JSON array, substituted for the whole quoted token
                 text = text.replace(f'"{token}"', json.dumps(value))
             else:
                 text = text.replace(token, value)
@@ -85,6 +109,8 @@ def main(argv=None):
     ap.add_argument("--account-id", required=True)
     ap.add_argument("--region", required=True)
     ap.add_argument("--allowed-email", action="append", default=[], help="an e-mail address allowed to act through the write roles (repeat for several)")
+    ap.add_argument("--send-email", action="append", default=[], help="Compose (optional): an e-mail address allowed to send mail through the console (repeat)")
+    ap.add_argument("--send-from", action="append", default=[], help="Compose (optional): an address the console may send as, exactly (repeat)")
     ap.add_argument("--topic-arn", required=True)
     ap.add_argument("--queue-arn", required=True)
     ap.add_argument("--service-principal", required=True)
