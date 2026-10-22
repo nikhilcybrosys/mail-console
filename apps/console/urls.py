@@ -27,5 +27,6 @@ urlpatterns = [
     path("setup/", views.setup_check, name="setup_check"),
     path("setup/test-write-roles/", views.setup_test_write_roles, name="setup_test_write_roles"),
     path("users/", views.users_view, name="users"),
+    path("users/add/", views.user_add, name="user_add"),
     path("users/<int:pk>/", views.user_update, name="user_update"),
 ]
