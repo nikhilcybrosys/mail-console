@@ -75,6 +75,40 @@ Any OpenID Connect provider with a discovery URL works (Google, Okta, Microsoft 
   until you configure it. Use a tenant-specific discovery URL: multi-tenant endpoints (templated issuer) are refused.
 - Changes to SES additionally ask for a passkey.
 
+## Alerts
+Alerts always appear on the Alerts page. To get them elsewhere, set a channel (https only):
+
+| Setting | Meaning |
+|---|---|
+| `MC_ALERT_SLACK_WEBHOOK_URL` | a Slack incoming webhook |
+| `MC_ALERT_WEBHOOK_URL`, `MC_ALERT_WEBHOOK_SECRET` | any tool that accepts a JSON `POST`; the secret is optional and signs each request |
+| `MC_ALERT_QUIET_HOURS`, `MC_ALERT_QUIET_TZ` | for example `22:00-07:00` and `Asia/Kolkata`: warnings wait until the window ends, urgent alerts never do |
+| `MC_ALERT_NOTIFY_RESOLVED` | send a notice when an alert resolves (default on) |
+
+What opens an alert (all values are fractions; the Alerts page shows what is in force):
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `MC_ALERT_BOUNCE_WARN` / `_PAGE` | `0.02` / `0.04` | bounce rate warning / urgent (SES starts reviewing at about 5%) |
+| `MC_ALERT_COMPLAINT_WARN` / `_PAGE` | `0.0005` / `0.0008` | complaint rate (SES starts reviewing at about 0.1%) |
+| `MC_ALERT_MIN_SAMPLE`, `MC_ALERT_APP_MIN_SAMPLE` | `200`, `50` | sends in 24 hours needed before a rate alerts, account-wide and per sender app |
+| `MC_ALERT_QUOTA_WARN` | `0.80` | share of the daily quota used |
+| `MC_ALERT_SILENT_MIN_MINUTES`, `_GAP_FACTOR`, `_MAX_HOURS` | `60`, `3`, `24` | "no events" waits at least the minimum, and at least the factor times the usual gap between sends, capped |
+
+Bounce and complaint rates are also checked per sender app (the `mc-app` tag on your messages), so one app with a bad
+list is named instead of hiding in the account average. A config set with fewer than 3 sends in a week is never reported silent.
+
+**Verifying the webhook.** With a secret set, each request has `X-Mail-Console-Timestamp` (unix seconds) and
+`X-Mail-Console-Signature: sha256=<hex>`, the HMAC-SHA256 of `"<timestamp>." + raw body` keyed with the secret:
+
+    import hashlib, hmac, time
+    def valid(secret: bytes, body: bytes, ts: str, sig: str) -> bool:
+        good = "sha256=" + hmac.new(secret, ts.encode() + b"." + body, hashlib.sha256).hexdigest()
+        return hmac.compare_digest(good, sig) and abs(time.time() - int(ts)) < 300   # also rejects replays
+
+The body is `{"event": "alert.firing" | "alert.resolved" | "test", "alert": {id, key, severity, title, detail, opened_at, resolved_at}, ...}`.
+The Alerts page has a button that sends a test notification to every channel.
+
 ## License
 Licensed under the [Apache License 2.0](LICENSE). Third-party components are listed in
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). The name, logo and accent colour are configurable with the
