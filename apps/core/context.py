@@ -33,6 +33,8 @@ def _nav(request, u):
         gov.append(item("audit", "Audit log", "scroll-text"))
     if has_capability(u, "manage_users"):
         gov.append(item("users", "Users and roles", "users"))
+    if has_capability(u, "view_setup"):
+        gov.append(item("setup_check", "Setup check", "circle-check"))
     if gov:
         groups.append({"label": "Governance", "items": gov})
     return groups

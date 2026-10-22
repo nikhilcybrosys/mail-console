@@ -32,6 +32,7 @@ services:
       MC_DEBUG: "1"             # DEMO ONLY: enables the development sign-in shortcut
       MC_DEV_LOGIN: "1"
       MC_SECRET_KEY: demo-only-not-a-secret
+      MC_EXPECTED_SNS_TOPIC_ARNS: arn:aws:sns:ap-south-1:111122223333:mc-ses-events
       MC_DB_HOST: db
       MC_DB_PORT: "5432"
       MC_DB_USER: mailconsole
