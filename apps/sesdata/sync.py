@@ -13,7 +13,7 @@ def sync_account(reader, account_id, region):
         aws_account_id=account_id, region=region, production_access=bool(a.get("ProductionAccessEnabled")),
         sending_enabled=bool(a.get("SendingEnabled")), enforcement_status=a.get("EnforcementStatus", ""),
         max_24h_send=q.get("Max24HourSend", 0), sent_last_24h=q.get("SentLast24Hours", 0), max_send_rate=q.get("MaxSendRate", 0),
-        raw={k: v for k, v in a.items() if k != "ResponseMetadata"})
+        raw=_jsonable({k: v for k, v in a.items() if k != "ResponseMetadata"}))
 
 
 def sync_identities(reader, account_id, region):
@@ -27,7 +27,7 @@ def sync_identities(reader, account_id, region):
             verified=bool(d.get("VerifiedForSendingStatus")), dkim_status=dk.get("Status", ""), dkim_tokens=dk.get("Tokens", []),
             dkim_signing_origin=dk.get("SigningAttributesOrigin", ""), mail_from_domain=mf.get("MailFromDomain", ""),
             mail_from_status=mf.get("MailFromDomainStatus", ""), default_config_set=d.get("ConfigurationSetName", ""),
-            raw={k: v for k, v in d.items() if k not in ("ResponseMetadata", "Policies")}))
+            raw=_jsonable({k: v for k, v in d.items() if k not in ("ResponseMetadata", "Policies")})))
     return out
 
 
@@ -42,11 +42,12 @@ def sync_config_sets(reader, account_id, region):
             sending_enabled=cs.get("SendingOptions", {}).get("SendingEnabled", True),
             tracking_domain=cs.get("TrackingOptions", {}).get("CustomRedirectDomain", ""),
             archive_arn=cs.get("ArchivingOptions", {}).get("ArchiveArn", ""),
-            raw={k: v for k, v in cs.items() if k != "ResponseMetadata"}))
+            raw=_jsonable({k: v for k, v in cs.items() if k != "ResponseMetadata"})))
     return out
 
 
 def _jsonable(obj):
+    """boto3 returns datetime objects; the JSON columns need plain strings."""
     import json
     return json.loads(json.dumps(obj, default=str))
 

@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone as dt_timezone
 
 import pytest
 from django.utils import timezone
@@ -16,7 +16,9 @@ ACC, REG = "111122223333", "ap-south-1"
 class FakeReader:
     def __init__(self):
         self.suppressed = {}
+        # Real SES responses carry datetime objects (boto3 parses timestamps); the snapshot JSON columns must cope.
         self.account = {"ProductionAccessEnabled": True, "SendingEnabled": True, "EnforcementStatus": "HEALTHY",
+                        "Details": {"CreatedTimestamp": datetime(2026, 1, 2, tzinfo=dt_timezone.utc)},
                         "SendQuota": {"Max24HourSend": 50000.0, "MaxSendRate": 14.0, "SentLast24Hours": 100.0}}
 
     def get_account(self):
@@ -27,6 +29,7 @@ class FakeReader:
 
     def get_identity(self, name):
         return {"IdentityType": "DOMAIN", "VerifiedForSendingStatus": True, "ConfigurationSetName": "mc-default",
+                "VerificationInfo": {"LastCheckedTimestamp": datetime(2026, 10, 22, tzinfo=dt_timezone.utc)},
                 "DkimAttributes": {"Status": "SUCCESS", "Tokens": ["t1", "t2", "t3"], "SigningAttributesOrigin": "AWS_SES"},
                 "MailFromAttributes": {"MailFromDomain": "mail.example.com", "MailFromDomainStatus": "SUCCESS"}}
 
@@ -34,7 +37,8 @@ class FakeReader:
         return ["mc-default"]
 
     def get_config_set(self, n):
-        return {"SendingOptions": {"SendingEnabled": True}, "TrackingOptions": {}}
+        return {"SendingOptions": {"SendingEnabled": True}, "TrackingOptions": {},
+                "ReputationOptions": {"LastFreshStart": datetime(2026, 10, 1, tzinfo=dt_timezone.utc)}}
 
     def get_event_destinations(self, n):
         return [{"Name": "sns", "Enabled": True, "MatchingEventTypes": ["BOUNCE"]}]

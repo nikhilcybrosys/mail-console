@@ -8,7 +8,7 @@ from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 
 from apps.audit.service import record
-from apps.sesdata.events import ParseError, UnexpectedTopic
+from apps.sesdata.events import IgnoredMessage, ParseError, UnexpectedTopic
 from apps.sesdata.ingest import process_body
 
 log = logging.getLogger(__name__)
@@ -49,6 +49,8 @@ class Command(BaseCommand):
                 # Anomalous: leave on queue so it lands in the DLQ and raises the DLQ alarm.
                 record("ingest.rejected_topic", details={"message_id": m["MessageId"], "error": str(exc)[:200]})
                 continue
+            except IgnoredMessage as exc:
+                log.info("ignored control message %s: %s", m["MessageId"], exc)  # then deleted below
             except ParseError as exc:
                 log.warning("unparseable message %s: %s", m["MessageId"], exc)
                 continue
