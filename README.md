@@ -109,6 +109,44 @@ list is named instead of hiding in the account average. A config set with fewer 
 The body is `{"event": "alert.firing" | "alert.resolved" | "test", "alert": {id, key, severity, title, detail, opened_at, resolved_at}, ...}`.
 The Alerts page has a button that sends a test notification to every channel.
 
+## Metrics (Prometheus)
+`GET /metrics` serves Prometheus text format. It does not exist (404) until you set `MC_METRICS_TOKEN` (at least 32
+characters; `python -c "import secrets; print(secrets.token_urlsafe(32))"`), and then it needs
+`Authorization: Bearer <token>`. A signed-in session is not accepted, and neither is a token in the URL.
+
+    scrape_configs:
+      - job_name: mail-console
+        scheme: https
+        metrics_path: /metrics
+        authorization: {credentials_file: /etc/prometheus/mail-console.token}
+        static_configs: [{targets: ["console.example.com"]}]
+
+It reports aggregate numbers only (no addresses, subjects or message ids), and every label is a small bounded set
+(sender apps are capped at the busiest 50). Numbers come from the console's own database and are cached for 10 seconds.
+
+| Metric | Labels | Meaning |
+|---|---|---|
+| `mailconsole_events_24h` | `event_type` | SES events received in the last 24 hours |
+| `mailconsole_app_events_24h` | `app`, `event_type` | the same by sender app (`send`, `delivery`, `bounce`, `complaint`) |
+| `mailconsole_reputation_bounce_rate_24h`, `_complaint_rate_`, `_sample_` | | the console's own estimate; CloudWatch is authoritative |
+| `mailconsole_ses_sending_enabled`, `_production_access`, `_enforcement_healthy`, `_quota_used_ratio`, `_sent_24h`, `_max_24h_send` | `region` | account state as of the last sync |
+| `mailconsole_last_event_timestamp_seconds`, `mailconsole_last_sync_timestamp_seconds` | `region` (sync) | for "nothing arrived for a while" rules |
+| `mailconsole_suppression_entries` | `region` | addresses on the suppression list |
+| `mailconsole_alerts_open` | `severity` | open alerts |
+| `mailconsole_approvals_pending` | | changes waiting for a second person |
+
+Per-app ratios are best computed in PromQL, where you choose the window. Note these are plain counts, so unlike the
+console's estimate they include transient bounces:
+
+    sum by (app) (mailconsole_app_events_24h{event_type="bounce"})
+      / sum by (app) (mailconsole_app_events_24h{event_type="send"})
+
+    # example alert rules
+    - alert: MailConsoleSyncStalled
+      expr: time() - mailconsole_last_sync_timestamp_seconds > 900
+    - alert: SesNotHealthy
+      expr: mailconsole_ses_enforcement_healthy == 0 or mailconsole_ses_sending_enabled == 0
+
 ## License
 Licensed under the [Apache License 2.0](LICENSE). Third-party components are listed in
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). The name, logo and accent colour are configurable with the
