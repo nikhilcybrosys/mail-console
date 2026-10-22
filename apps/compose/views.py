@@ -248,12 +248,12 @@ def template_use(request, pk):
     t = get_object_or_404(MessageTemplate, pk=pk)
     names = service.find_variables(t.subject, t.body)
     errors, values = [], {}
-    if request.method == "POST" or not names:
+    if request.method == "POST":  # a draft is only ever created by a POST with the CSRF token, never by following a link
         if request.user.drafts.count() >= service.MAX_DRAFTS_PER_USER:
             messages.error(request, f"You can keep {service.MAX_DRAFTS_PER_USER} drafts. Delete some first.")
             return redirect("compose")
         values = {n: service.clean_value(request.POST.get(f"var_{n}")) for n in names}
-        errors = service.check_values(names, values) if request.method == "POST" else []
+        errors = service.check_values(names, values)
         if not errors:
             sender_ok = t.from_address in {a.address for a in service.usable_senders()}
             d = Draft.objects.create(user=request.user, from_address=t.from_address if sender_ok else "", subject=service.fill(t.subject, values),
