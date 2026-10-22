@@ -18,6 +18,9 @@ toolchain.
 - **Safe changes:** every change to SES asks for a passkey, and risky ones (bulk suppression removal, pausing sending,
   identity and event-destination changes) also need a second person to approve. Changes run with narrowly scoped AWS
   roles that can never send mail (Compose, below, is an opt-in exception with its own narrow role).
+- **Estimated cost:** SES message charges this month and for the selected period, by sender app. It is a floor, not your bill: each
+  recipient counts as one email at `MC_SES_PRICE_PER_1000` (default `0.10`), and attachment data charges, any free tier,
+  Virtual Deliverability Manager and dedicated IPs are not visible to the console.
 - **Tamper-evident audit log:** every sign-in, change and message-body view, hash-chained so edits show.
 
 <p align="center">
