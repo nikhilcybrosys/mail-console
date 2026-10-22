@@ -90,6 +90,10 @@ Write and send a one-off message from an address you own, without leaving the co
   someone checks Sent mail and says it did not go out. The send client never retries automatically, so a lost response cannot
   mail the same message twice.
 - Plain text only. The HTML part is the same text, escaped, with `http(s)` links made clickable.
+- **Templates:** a shared library of reusable messages with `{{first_name}}`-style placeholders. Using one asks for each value and
+  creates an ordinary draft (nothing is sent from there); a message with an unfilled placeholder cannot be previewed or sent.
+  Anyone who can compose can use and create templates; only the creator or a security admin can edit or delete one, and every
+  change is audited (name and placeholders, never the text).
 
 ## Alerts
 Alerts always appear on the Alerts page. To get them elsewhere, set a channel (https only):
