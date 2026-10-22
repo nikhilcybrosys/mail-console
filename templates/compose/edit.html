@@ -14,6 +14,6 @@
   <div class="field"><label class="label" for="f-bcc">{% trans "Bcc" %} <span class="muted">({% trans "optional" %})</span></label><textarea class="textarea" id="f-bcc" name="bcc" rows="1" autocomplete="off" spellcheck="false">{{ d.bcc_text }}</textarea></div>
   <div class="field"><label class="label" for="f-subject">{% trans "Subject" %}</label><input class="input" id="f-subject" name="subject" maxlength="500" value="{{ d.subject }}" autocomplete="off"></div>
   <div class="field"><label class="label" for="f-body">{% trans "Message" %}</label><textarea class="textarea" id="f-body" name="body" rows="14">{{ d.body }}</textarea></div>
-  <div class="btn-group"><button class="btn btn-primary" type="submit" name="action" value="preview">{% trans "Check and preview" %}</button><button class="btn" type="submit" name="action" value="save">{% trans "Save draft" %}</button><a class="btn btn-ghost" href="{% url 'compose' %}">{% trans "Back" %}</a></div>
+  <div class="btn-group"><button class="btn btn-primary" type="submit" name="action" value="preview">{% trans "Check and preview" %}</button><button class="btn" type="submit" name="action" value="save">{% trans "Save draft" %}</button>{% if d.pk %}<a class="btn btn-ghost" href="{% url 'compose_template_new' %}?from_draft={{ d.pk }}">{% trans "Save as template" %}</a>{% endif %}<a class="btn btn-ghost" href="{% url 'compose' %}">{% trans "Back" %}</a></div>
 </div></form>
 {% endblock %}

@@ -54,3 +54,21 @@ class SentMail(models.Model):
 
     class Meta:
         ordering = ["-sent_at"]
+
+
+class MessageTemplate(models.Model):
+    """A reusable message with {{placeholders}}, shared by everyone who can compose. Using one only creates an ordinary
+    draft; a template can never send anything by itself."""
+
+    name = models.CharField(max_length=80)
+    name_lower = models.CharField(max_length=80, unique=True)
+    from_address = models.CharField(max_length=254, blank=True)  # optional default; must still be switched on to be used
+    subject = models.CharField(max_length=500, blank=True)
+    body = models.TextField(blank=True)
+    created_by = models.CharField(max_length=254)
+    updated_by = models.CharField(max_length=254)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["name_lower"]

@@ -23,6 +23,18 @@
   {% endfor %}</ul>
   {% else %}{% include "components/_empty.html" with icon="mail" title=_("No drafts") text=_("Start a message with New message. Drafts are private to you.") %}{% endif %}</section>
 
+  <section class="card" aria-labelledby="tp-h"><div class="card-head"><div class="card-title" id="tp-h">{% trans "Templates" %}</div><span class="badge badge-plain">{{ templates|length }}</span>
+    <div class="card-actions"><a class="btn btn-sm" href="{% url 'compose_template_new' %}">{% icon "plus" %}<span>{% trans "New template" %}</span></a></div></div>
+  {% if templates %}<ul class="list">{% for x in templates %}
+    <li class="list-top"><span class="spacer"><span class="cell-primary">{{ x.t.name }}</span>
+      <div class="cell-secondary">{{ x.t.subject }}{% if x.vars %} · {% for v in x.vars %}<span class="badge badge-plain mono">{{ v }}</span> {% endfor %}{% endif %}</div>
+      <div class="cell-secondary muted">{% blocktrans with who=x.t.updated_by %}Last changed by {{ who }}{% endblocktrans %} · {% ago x.t.updated_at %}</div></span>
+      {% if senders %}<a class="btn btn-sm btn-primary" href="{% url 'compose_template_use' x.t.pk %}">{% trans "Use" %}</a>{% endif %}
+      {% if x.can_edit %}<a class="btn btn-sm" href="{% url 'compose_template_edit' x.t.pk %}">{% trans "Edit" %}</a>
+      <form method="post" action="{% url 'compose_template_delete' x.t.pk %}" data-confirm="{% trans 'Delete this template? Drafts already made from it are not affected.' %}" data-confirm-label="{% trans 'Delete' %}">{% csrf_token %}<button class="btn btn-sm btn-danger" type="submit">{% trans "Delete" %}</button></form>{% endif %}</li>
+  {% endfor %}</ul>
+  {% else %}{% include "components/_empty.html" with icon="file-text" title=_("No templates yet") text=_("Save a message you send often, with {{placeholders}} for the parts that change.") %}{% endif %}</section>
+
   <section class="card" aria-labelledby="se-h"><div class="card-head"><div class="card-title" id="se-h">{% trans "Sent by you" %}</div>
     <span class="muted">{% blocktrans with h=limits.hour_left d=limits.day_left %}Recipients left: {{ h }} this hour, {{ d }} today{% endblocktrans %}</span></div>
   {% if sent %}<table class="table"><thead><tr><th>{% trans "Sent" %}</th><th>{% trans "From" %}</th><th>{% trans "Subject" %}</th><th class="col-num">{% trans "Recipients" %}</th><th></th></tr></thead><tbody>
