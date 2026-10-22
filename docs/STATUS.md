@@ -30,15 +30,13 @@ Nothing here has been run against a real AWS account.
 - The filter bar has removable chips but no "add filter" menu; no saved views; no CSV export.
 - Event table is not partitioned (fine for tens of millions of rows; see `docs/DEVIATIONS.md`).
 - Sign-in and passkeys have not been exercised against a real provider or authenticator.
-- The CI workflow passes actionlint and GitHub's workflow schema; `compose.yaml` and the Dependabot file pass their official
-  schemas. The `Dockerfile` was reviewed by hand against hadolint's rules (the real linter runs in CI). None of the container
-  files has been **built or run** by the author (no container runtime was used). The CI workflow builds and smoke-tests them, so the first CI run is
-  their first real test. The Terraform has no image registry or deployment pipeline yet; environment names match the app
-  (checked), and `/healthz/` and the worker heartbeat file exist, but nothing has been deployed.
-- No external security review or penetration test has been done.
+- CI (GitHub Actions) is green on `main`: tests on PostgreSQL 16, Django deployment checks, Terraform format and validate, a
+  dependency vulnerability and licence audit, and a Docker build with a smoke test of the demo (lint, image build, healthy
+  start, login and pages respond, container runs as an unprivileged user). Terraform has **never been planned or applied**
+  and nothing has been deployed: there is no image registry or deployment pipeline yet. Environment names match the app
+  (checked by script), and `/healthz/` and the worker heartbeat file exist.
 
 ## Before publishing the repository
-- Push, then enable GitHub private vulnerability reporting (`SECURITY.md` points to it) and branch protection that
-  requires the CI jobs.
-- Watch the first CI run: the Docker build and demo smoke test have not been executed anywhere yet.
+- Enable GitHub private vulnerability reporting (`SECURITY.md` points to it) and branch protection that requires the CI jobs.
+- Decide whether to move to Django 6 (Dependabot proposed it; the tests pass there) or stay on 5.2 LTS.
 - Have the licence and copyright holder reviewed.
