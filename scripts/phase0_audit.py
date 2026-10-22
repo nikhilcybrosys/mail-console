@@ -130,6 +130,23 @@ def _key_info(iam, key):
             "last_used_region": u.get("Region") if when else None}
 
 
+def _group_reasons(iam, user):
+    """Why this user may be able to use SES through the groups it belongs to."""
+    groups = safe(iam.list_groups_for_user, UserName=user)
+    reasons = []
+    for g in ([] if "_error" in groups else groups.get("Groups", [])):
+        gname = g["GroupName"]
+        attached = safe(iam.list_attached_group_policies, GroupName=gname)
+        if any(re.search(r"ses|email", x["PolicyName"], re.I) for x in ([] if "_error" in attached else attached.get("AttachedPolicies", []))):
+            reasons.append(f"member of group {gname!r}, which has an SES-related attached policy")
+        inline = safe(iam.list_group_policies, GroupName=gname)
+        for pn in ([] if "_error" in inline else inline.get("PolicyNames", [])):
+            doc = safe(iam.get_group_policy, GroupName=gname, PolicyName=pn)
+            if "_error" not in doc and _mentions_ses(doc.get("PolicyDocument", {})):
+                reasons.append(f"member of group {gname!r}, whose inline policy {pn!r} mentions SES permissions")
+    return reasons
+
+
 def audit_iam(iam=None):
     """Users that look SES-related, with the reason and when each access key was last used (None = never)."""
     iam = iam or client("iam")
@@ -146,6 +163,7 @@ def audit_iam(iam=None):
         reasons = []
         if SES_NAME.search(n):
             reasons.append("name looks SES/SMTP-related")
+        reasons += _group_reasons(iam, n)  # permissions inherited through groups are easy to miss
         if any(re.search(r"ses|email", x, re.I) for x in names):
             reasons.append("an attached policy looks SES-related")
         for pn in inl:
