@@ -101,10 +101,19 @@ def test_export_needs_the_capability_and_a_fresh_passkey():
         assert c.get(reverse("messages_export")).status_code == 403
     c, _ = login(SUPPORT, "s@example.com")                                    # no passkey assertion yet
     r = c.get(reverse("messages_export") + "?app=webapp")
-    assert r.status_code == 302 and r["Location"].startswith(reverse("step_up")) and "messages/export" in r["Location"]
+    assert r.status_code == 302 and r["Location"].startswith(reverse("step_up")) and "messages%2Fexport" in r["Location"]
     assert not AuditLog.objects.filter(action="export.messages").exists()      # nothing was exported, nothing is claimed
     from django.test import Client
     assert Client(HTTP_HOST="console.test").get(reverse("messages_export")).status_code == 302
+
+
+def test_the_passkey_detour_returns_to_exactly_the_filters_that_were_asked_for():
+    from urllib.parse import parse_qs, urlparse
+    mail(app="billing", bounce="a@x.com")
+    c, _ = login(SUPPORT, "s@example.com")
+    loc = c.get(reverse("messages_export") + "?app=billing&state=bounce&q=a%26b")["Location"]
+    q = parse_qs(urlparse(loc).query)
+    assert list(q) == ["next"] and q["next"] == ["/messages/export/?app=billing&state=bounce&q=a%26b"]   # nothing split off, nothing lost
 
 
 def test_export_is_audited_with_counts_and_filters_but_no_addresses():
