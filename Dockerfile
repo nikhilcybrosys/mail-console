@@ -23,7 +23,7 @@ COPY scripts ./scripts
 # Collect static files at build time (WhiteNoise serves them). The key below exists only for this command.
 RUN MC_SECRET_KEY=build-time-only-not-a-secret MC_DEBUG=0 python manage.py collectstatic --noinput \
  && chmod -R a+rX /app
-USER app
+USER 10001:10001
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz/', timeout=3)"]
