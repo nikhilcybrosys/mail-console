@@ -8,7 +8,7 @@
       "Resource": "*"
     },
     {
-      "Sid": "NoOtherWayOfSending",
+      "Sid": "NoOtherSendActions",
       "Effect": "Deny",
       "Action": ["ses:SendBulkEmail", "ses:SendRawEmail", "ses:SendCustomVerificationEmail", "ses:SendTemplatedEmail", "ses:SendBulkTemplatedEmail", "ses:SendBounce"],
       "Resource": "*"

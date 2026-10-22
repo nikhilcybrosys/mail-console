@@ -30,7 +30,8 @@ CHECKS = {
 APP_ROLE_NAME = "mail-console-app"
 # Compose is opt-in: these four files are only produced when --send-email and --send-from are given.
 SEND_FILES = {"send.json", "permissions-boundary-send.json", "trust-send-role.json", "app-assume-send.json"}
-LIST_TOKENS = ("__ALLOWED_EMAILS__", "__SEND_EMAILS__", "__SEND_FROM__")
+LIST_TOKENS = ("__ALLOWED_EMAILS__", "__SEND_EMAILS__", "__SEND_FROM__", "__SEND_RESOURCES__")
+CONFIG_SET = re.compile(r"[A-Za-z0-9_-]{1,64}")
 EMAIL = re.compile(r"[a-z0-9._%+-]{1,40}@([a-z0-9-]+\.)+[a-z]{2,}")  # exact, lowercase, no wildcards: SourceIdentity is matched exactly
 
 
@@ -76,8 +77,23 @@ def build_values(args):
     send_from = clean_addresses(getattr(args, "send_from", None), "--send-from", "From addresses")
     if bool(send_emails) != bool(send_from):
         raise SystemExit("Compose needs both --send-email (who may send) and --send-from (which addresses they may send as), or neither")
+    config_set = (getattr(args, "send_config_set", "") or "").strip()
+    if send_emails and not CONFIG_SET.fullmatch(config_set):
+        raise SystemExit("Compose needs --send-config-set: the one configuration set its mail goes through (letters, digits, _ and -)")
+    if config_set and not send_emails:
+        raise SystemExit("--send-config-set only makes sense together with --send-email and --send-from")
     if send_emails:
-        values["__SEND_EMAILS__"], values["__SEND_FROM__"] = send_emails, send_from
+        values["__SEND_EMAILS__"], values["__SEND_FROM__"], values["__SEND_CONFIG_SET__"] = send_emails, send_from, config_set
+        # Only the identities behind the allowed From addresses (each address, and its domain) and the one configuration set.
+        # IAM cannot require that a set is named; SES applies the identity's default set when none is, and naming any other
+        # set is outside this resource list, so it is denied.
+        names = []
+        for a in send_from:
+            for n in (a, a.split("@")[1]):
+                if n not in names:
+                    names.append(n)
+        values["__SEND_RESOURCES__"] = [f"arn:aws:ses:{args.region}:{args.account_id}:identity/{n}" for n in names] + \
+            [f"arn:aws:ses:{args.region}:{args.account_id}:configuration-set/{config_set}"]
     values["__APP_ROLE_ARN__"] = f"arn:aws:iam::{values['__ACCOUNT_ID__']}:role/{APP_ROLE_NAME}"
     return values
 
@@ -111,6 +127,7 @@ def main(argv=None):
     ap.add_argument("--allowed-email", action="append", default=[], help="an e-mail address allowed to act through the write roles (repeat for several)")
     ap.add_argument("--send-email", action="append", default=[], help="Compose (optional): an e-mail address allowed to send mail through the console (repeat)")
     ap.add_argument("--send-from", action="append", default=[], help="Compose (optional): an address the console may send as, exactly (repeat)")
+    ap.add_argument("--send-config-set", default="", help="Compose (optional): the single configuration set its mail goes through")
     ap.add_argument("--topic-arn", required=True)
     ap.add_argument("--queue-arn", required=True)
     ap.add_argument("--service-principal", required=True)

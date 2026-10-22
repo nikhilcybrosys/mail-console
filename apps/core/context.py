@@ -26,6 +26,8 @@ def _nav(request, u):
     if has_capability(u, "view_inbound"):
         groups.append({"label": "Inbound", "items": [
             item("inbox", "Inbox", "inbox", ("inbound_detail",)), item("dmarc", "DMARC reports", "shield-check")]})
+    if settings.SEND_ENABLED and has_capability(u, "compose_send"):
+        groups.append({"label": "Send", "items": [item("compose", "Compose", "send", ("compose_new", "compose_edit", "compose_preview", "compose_senders"))]})
     gov = []
     if has_capability(u, "approve"):
         gov.append(item("approvals", "Approvals", "shield-check", count=ApprovalRequest.objects.filter(state="pending").count()))

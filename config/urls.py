@@ -7,5 +7,6 @@ urlpatterns = [
     path("metrics", core_views.metrics_view, name="metrics"),
     path("", include("apps.accounts.urls")),
     path("", include("apps.inbound.urls")),
+    path("", include("apps.compose.urls")),
     path("", include("apps.console.urls")),
 ]

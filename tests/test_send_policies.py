@@ -9,7 +9,7 @@ import pytest
 from .test_aws_policies import IDENTITY_POLICIES, SEND_ACTIONS, VALUES, allowed, as_list, load, render, statements
 
 ROOT = Path(__file__).resolve().parent.parent
-SEND = dict(VALUES, send_email=["ann@corp.example"], send_from=["notifications@corp.example", "support@corp.example"])
+SEND = dict(VALUES, send_email=["ann@corp.example"], send_from=["notifications@corp.example", "support@corp.example"], send_config_set="mail-set")
 OTHER_SEND_ACTIONS = [a for a in SEND_ACTIONS if a != "ses:SendEmail"]
 
 
@@ -33,6 +33,7 @@ def test_with_send_options_all_four_files_are_rendered_and_valid_json():
 
 @pytest.mark.parametrize("bad", [
     {"send_email": [], "send_from": ["a@corp.example"]}, {"send_email": ["ann@corp.example"], "send_from": []},   # one without the other
+    {"send_config_set": ""}, {"send_config_set": "has space"}, {"send_config_set": "*"}, {"send_config_set": "x" * 65},       # the set is required and exact
     {"send_from": ["*@corp.example"]}, {"send_from": ["not-an-address"]}, {"send_email": ["*@corp.example"]},
     {"send_from": ["a@b.c d"]}, {"send_email": ["x" * 70 + "@corp.example"]},
 ])
@@ -42,13 +43,25 @@ def test_send_options_are_validated_exactly_like_the_write_roles(bad):
 
 
 # ---- the send role: one action, named people, listed addresses, one region ---------------------------------------
+# NOTE on what IAM can and cannot do here: under SESv2, raw and templated content travel through the SAME ses:SendEmail
+# permission, so IAM cannot allow "simple" and forbid "raw". The denies below close the other send actions; keeping content
+# simple is the app's job (SesSender only ever builds simple content). What IAM does enforce: who (named people through the
+# app role and shared secret), as which address (ses:FromAddress), on which identities and configuration set, in one region.
 def test_send_role_can_do_exactly_one_thing():
     pol = load("send.json")
     assert allowed(pol) == {"ses:SendEmail"}
     (grant,) = statements(pol, "Allow")
     cond = grant["Condition"]["StringEquals"]
     assert cond["aws:SourceIdentity"] == "__SEND_EMAILS__" and cond["ses:FromAddress"] == "__SEND_FROM__" and cond["aws:RequestedRegion"] == "__REGION__"
-    assert "*" not in as_list(grant["Resource"]) and all(r.startswith("arn:aws:ses:__REGION__:__ACCOUNT_ID__:") for r in as_list(grant["Resource"]))
+    assert grant["Resource"] == "__SEND_RESOURCES__"   # filled by the renderer with the exact identities and the one configuration set
+
+
+def test_send_resources_are_the_exact_identities_and_one_configuration_set_never_a_wildcard():
+    res = json.loads(rendered()["send.json"])["Statement"][0]["Resource"]
+    arn = "arn:aws:ses:ap-south-1:123456789012:"
+    assert res == [arn + "identity/notifications@corp.example", arn + "identity/corp.example", arn + "identity/support@corp.example",
+                   arn + "configuration-set/mail-set"]
+    assert not any("*" in r for r in res)
 
 
 def test_send_role_explicitly_denies_every_other_way_of_sending_and_not_the_one_it_needs():

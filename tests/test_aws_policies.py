@@ -26,7 +26,7 @@ SEND_ACTIONS = ["ses:SendEmail", "ses:SendBulkEmail", "ses:SendRawEmail", "ses:S
                 "ses:SendTemplatedEmail", "ses:SendBulkTemplatedEmail", "ses:SendBounce"]
 IDENTITY_POLICIES = ["console-read.json", "write-ops.json", "write-security.json"]
 DOCUMENTED = {"__EXTERNAL_ID__", "__ACCOUNT_ID__", "__REGION__", "__ALLOWED_EMAILS__", "__TOPIC_ARN__", "__QUEUE_ARN__", "__APP_ROLE_ARN__", "__SERVICE_PRINCIPAL__",
-              "__SEND_EMAILS__", "__SEND_FROM__"}
+              "__SEND_EMAILS__", "__SEND_FROM__", "__SEND_RESOURCES__", "__SEND_CONFIG_SET__"}
 VALUES = dict(account_id="123456789012", region="ap-south-1", allowed_email=["ann@corp.example", "bob@corp.example"],
               topic_arn="arn:aws:sns:ap-south-1:123456789012:mail-console-ses-events",
               queue_arn="arn:aws:sqs:ap-south-1:123456789012:mail-console-events", service_principal="ec2.amazonaws.com", external_id="x" * 32)
