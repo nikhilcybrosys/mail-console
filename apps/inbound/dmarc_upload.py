@@ -4,6 +4,7 @@ Untrusted input, so: size limits before reading, decompression capped by apps.in
 every field validated and normalised, anything unexpected rejects the whole report, and only reports for domains this console
 watches are accepted. The raw file is never stored; only the validated numbers are.
 """
+import hashlib
 import ipaddress
 import logging
 import re
@@ -120,7 +121,7 @@ def ingest(files, uploader, *, allowed=None, now=None):
             continue
         try:
             with transaction.atomic():
-                DmarcReport.objects.create(uploaded_by=uploader, uploaded_at=now, **cleaned)
+                DmarcReport.objects.create(source="upload", file_sha256=hashlib.sha256(raw).hexdigest(), uploaded_by=uploader, uploaded_at=now, **cleaned)
         except IntegrityError:
             results.append(Result(name, "duplicate", "already added", cleaned["domain"]))
             continue

@@ -42,6 +42,10 @@ class InboundAttachment(models.Model):
 class DmarcReport(models.Model):
     # A report either came from the inbox (message set) or was uploaded by a person (message empty, uploaded_by set).
     message = models.ForeignKey(InboundMessage, on_delete=models.CASCADE, related_name="dmarc_reports", null=True, blank=True)
+    # "inbox": received at the address SES receives for (authenticated by the receiving path). "upload": added by hand, taken at
+    # face value; the sha256 of the original file lets anyone compare it with the attachment later.
+    source = models.CharField(max_length=10, default="inbox")
+    file_sha256 = models.CharField(max_length=64, blank=True)
     uploaded_by = models.CharField(max_length=254, blank=True)
     uploaded_at = models.DateTimeField(null=True, blank=True)
     org_name = models.CharField(max_length=200)
@@ -55,4 +59,5 @@ class DmarcReport(models.Model):
     fail_count = models.PositiveIntegerField(default=0)
 
     class Meta:
-        constraints = [models.UniqueConstraint(fields=["org_name", "report_id"], name="uniq_dmarc_report")]
+        # Per source, so an uploaded (unverified) report can never occupy the slot of the genuine one when it arrives by mail.
+        constraints = [models.UniqueConstraint(fields=["source", "org_name", "report_id"], name="uniq_dmarc_report")]

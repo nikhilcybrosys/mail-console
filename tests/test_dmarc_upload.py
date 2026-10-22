@@ -295,3 +295,68 @@ def test_bad_query_values_fall_back_safely_and_names_are_escaped(watched):
 def test_the_page_renders_with_no_reports():
     c, _ = login(SUPPORT, "s@example.com")
     assert "No DMARC reports in this period" in c.get(reverse("dmarc")).content.decode()
+
+
+# ---------------------------------------------------------------- provenance: uploaded reports are unverified and cannot block real ones
+def inbox_twin(org="google.com", rid="r1", domain="example.com", ok=100, bad=0):
+    from apps.inbound.models import InboundMessage
+    m = InboundMessage.objects.create(aws_account_id="1", region="ap-south-1", archive_message_id=f"a-{rid}", received_at=NOW, kind="dmarc_report")
+    now = datetime.now(timezone.utc)
+    return DmarcReport.objects.create(message=m, source="inbox", org_name=org, report_id=rid, domain=domain, begin=now - timedelta(days=1), end=now - timedelta(hours=1),
+                                      policy="none", rows=[{"source_ip": "203.0.113.5", "count": ok, "disposition": "none", "dkim": "pass", "spf": "pass", "header_from": domain}],
+                                      pass_count=ok, fail_count=bad)
+
+
+def test_an_uploaded_report_records_the_fingerprint_of_the_original_file():
+    import hashlib
+    data = xml(rid="fp")
+    ingest(up(data))
+    r = DmarcReport.objects.get()
+    assert r.source == "upload" and r.file_sha256 == hashlib.sha256(data).hexdigest()
+    ingest(up(gz(xml(rid="fp2"))))
+    assert DmarcReport.objects.get(report_id="fp2").file_sha256 == hashlib.sha256(gz(xml(rid="fp2"))).hexdigest()   # of what was uploaded
+
+
+def live_upload(rid, n=5):
+    now = datetime.now(timezone.utc)   # real clock: these tests also exercise the period filter
+    return dmarc_upload.ingest([up(xml(rid=rid, begin=now - timedelta(days=1), end=now - timedelta(hours=1), rows=[("203.0.113.5", n, "pass", "pass", "none", "example.com")]))],
+                               "up@example.com", allowed=ALLOWED)
+
+
+def test_a_forged_upload_cannot_pre_empt_the_genuine_report_that_arrives_later():
+    """The review finding: with one uniqueness key, an uploaded report could occupy the slot of the real one."""
+    assert live_upload("same")[0].status == "added"
+    genuine = inbox_twin(rid="same", ok=50)                         # the real one arrives by mail with the same organisation and id
+    assert genuine.pk and DmarcReport.objects.filter(report_id="same").count() == 2
+
+
+def test_the_same_report_present_both_ways_is_counted_once_as_the_mail_copy():
+    assert live_upload("same")[0].status == "added"
+    assert dmarcstats.overview(30)[0]["total"] == 5
+    inbox_twin(rid="same", ok=50)
+    (o,) = dmarcstats.overview(30)
+    assert o["total"] == 50 and o["uploaded"] == 0 and o["reports"] == 1          # the unverified copy no longer counts
+    rows, _ = dmarcstats.sources("example.com", 30)
+    assert rows[0]["count"] == 50
+
+
+def test_uploads_of_different_reports_still_count_and_are_flagged_as_unverified():
+    reports(days=10, per_day=30)
+    (o,) = dmarcstats.overview(30)
+    assert o["uploaded"] == 10 and o["state"] == "ready" and "uploaded by hand" in o["advice"] and "cannot verify" in o["advice"]
+
+
+def test_a_purely_inbox_domain_has_no_caveat():
+    now = datetime.now(timezone.utc)
+    for i in range(10):
+        r = inbox_twin(rid=f"i{i}", ok=30)
+        DmarcReport.objects.filter(pk=r.pk).update(begin=now - timedelta(days=i + 1), end=now - timedelta(days=i + 1) + timedelta(hours=23))
+    (o,) = dmarcstats.overview(30)
+    assert o["uploaded"] == 0 and o["state"] == "ready" and "uploaded by hand" not in o["advice"]
+
+
+def test_the_page_labels_uploaded_reports_as_not_verified_and_the_upload_page_says_so(watched):
+    reports(days=3)
+    c, _ = login(DELIVERABILITY_ADMIN, "d@example.com")
+    assert "uploaded, not verified" in c.get(reverse("dmarc")).content.decode()
+    assert "taken at face value" in c.get(reverse("dmarc_upload")).content.decode()

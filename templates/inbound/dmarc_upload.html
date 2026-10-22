@@ -2,7 +2,7 @@
 {% block title %}{% trans "Upload DMARC reports" %}{% endblock %}
 {% block crumbs %}<a href="{% url 'dmarc' %}">{% trans "DMARC reports" %}</a><span class="sep">/</span><span aria-current="page">{% trans "Upload" %}</span>{% endblock %}
 {% block content %}
-<div class="ph"><div><h1>{% trans "Upload DMARC reports" %}</h1><p>{% trans "Download the report attachments from the mailbox in your DMARC record's rua address (.xml, .gz or .zip) and add them here. Only reports for your own domains are kept, and only the numbers: the file itself is not stored." %}</p></div></div>
+<div class="ph"><div><h1>{% trans "Upload DMARC reports" %}</h1><p>{% trans "Download the report attachments from the mailbox in your DMARC record's rua address (.xml, .gz or .zip) and add them here. Only reports for your own domains are kept, and only the numbers: the file itself is not stored, but its fingerprint is, so it can be compared with the original later. Uploaded reports are taken at face value and labelled as unverified." %}</p></div></div>
 <div class="stack">
 {% if results %}
   <section class="card" aria-labelledby="rs-h"><div class="card-head"><div class="card-title" id="rs-h">{% trans "Result" %}</div></div>

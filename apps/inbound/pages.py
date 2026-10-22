@@ -80,7 +80,7 @@ def dmarc_dashboard(request):
     src, more = dmarcstats.sources(current["domain"], days) if current else ([], 0)
     return render(request, "inbound/dmarc.html", {
         "days": days, "periods": dmarcstats.PERIODS, "domains": domains, "current": current, "sources": src, "more_sources": more,
-        "reports": dmarcstats.recent_reports(current["domain"] if current else None),
+        "reports": dmarcstats.recent_reports(current["domain"] if current else None, days=days),
         "can_upload": has_capability(request.user, "dmarc_upload")})
 
 

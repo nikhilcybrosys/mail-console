@@ -4,6 +4,7 @@
 """
 from datetime import timedelta
 
+from django.db.models import Exists, OuterRef
 from django.utils import timezone
 
 from .models import DmarcReport
@@ -16,8 +17,10 @@ TOP_SOURCES = 25
 
 
 def _recent(days, now=None):
+    """Reports in the period. A report that was both uploaded and received by mail is counted once, as the mail copy."""
     now = now or timezone.now()
-    return DmarcReport.objects.filter(end__gte=now - timedelta(days=days))
+    twin = DmarcReport.objects.filter(source="inbox", org_name=OuterRef("org_name"), report_id=OuterRef("report_id"))
+    return DmarcReport.objects.filter(end__gte=now - timedelta(days=days)).exclude(Exists(twin), source="upload")
 
 
 def days_covered(reports):
@@ -54,9 +57,13 @@ def overview(days=30, now=None):
         latest = rs.order_by("-end").first()
         covered = days_covered(rs)
         state, text = readiness(latest.policy, ok + bad, bad, covered)
+        uploaded = rs.filter(source="upload").count()
+        if uploaded and state in ("ready", "not_ready"):
+            text += (f" Note: {uploaded} of these {rs.count()} reports were uploaded by hand and are taken at face value; the console cannot verify"
+                     " they came from the provider.")
         out.append({"domain": domain, "policy": latest.policy, "reports": rs.count(), "passed": ok, "failed": bad, "total": ok + bad,
                     "pass_rate": (ok / (ok + bad)) if ok + bad else 0.0, "days": covered, "state": state, "advice": text,
-                    "providers": sorted(set(rs.values_list("org_name", flat=True)))})
+                    "providers": sorted(set(rs.values_list("org_name", flat=True))), "uploaded": uploaded})
     return out
 
 
@@ -84,8 +91,8 @@ def sources(domain, days=30, now=None):
     return rows[:TOP_SOURCES], max(len(rows) - TOP_SOURCES, 0)
 
 
-def recent_reports(domain=None, limit=25):
-    qs = DmarcReport.objects.order_by("-end")
+def recent_reports(domain=None, limit=25, days=None, now=None):
+    qs = (_recent(days, now) if days else DmarcReport.objects.all()).order_by("-end")
     if domain:
         qs = qs.filter(domain=domain)
     return list(qs[:limit])
