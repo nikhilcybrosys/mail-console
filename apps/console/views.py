@@ -2,6 +2,8 @@
 import re
 from datetime import timedelta
 
+import requests
+
 from django.conf import settings
 from django.contrib import messages
 from django.core.paginator import Paginator
@@ -22,7 +24,7 @@ from apps.audit.service import record, verify_chain
 from apps.core.rbac import ROLES, has_capability, require_capability
 from apps.core.scope import scoped_identities
 from apps.core.templatetags.ui import STATES
-from apps.sesdata import metrics, setupcheck, sync
+from apps.sesdata import channels, metrics, setupcheck, sync
 from apps.sesdata.events import SUPPRESSION_SUBTYPES  # noqa: F401  (re-exported for templates/tests)
 from apps.sesdata.explain import explain
 from apps.sesdata.models import (AccountSnapshot, Alert, BodyAccessLog, ConfigSetSnapshot, DnsCheckResult, IdentitySnapshot,
@@ -357,11 +359,42 @@ def config_sets(request):
 
 
 # ------------------------------------------------------------------ alerts / approvals / audit / users
+def _alert_rules():
+    """The thresholds in force, for display. They come from MC_ALERT_* settings; nothing here edits them."""
+    t = settings.ALERT_THRESHOLDS
+    pct = lambda v: f"{v * 100:g}%"  # noqa: E731
+    quiet = channels.quiet_window()
+    return {
+        "bounce": f"{pct(t['bounce_warn'])} warning, {pct(t['bounce_page'])} urgent", "complaint": f"{pct(t['complaint_warn'])} warning, {pct(t['complaint_page'])} urgent",
+        "quota": f"{pct(t['quota_warn'])} of the daily quota", "min_sample": settings.ALERT_MIN_SAMPLE, "app_min_sample": settings.ALERT_APP_MIN_SAMPLE,
+        "silent": f"at least {settings.ALERT_SILENT_MIN_MINUTES} minutes, and {settings.ALERT_SILENT_GAP_FACTOR:g}× the usual gap between sends (at most {settings.ALERT_SILENT_MAX_HOURS:g} hours)",
+        "quiet": f"{settings.ALERT_QUIET_HOURS.strip()} ({settings.ALERT_QUIET_TZ}): warnings wait, urgent alerts do not" if quiet else "",
+    }
+
+
+def _alerts_context(request, test_results=None):
+    chans = channels.configured()
+    return {
+        "open": Alert.objects.filter(resolved_at__isnull=True).order_by("-opened_at"),
+        "recent": Alert.objects.filter(resolved_at__isnull=False).order_by("-resolved_at")[:20],
+        "channels": [channels.LABELS[c] for c in chans], "rules": _alert_rules(), "notify_resolved": settings.ALERT_NOTIFY_RESOLVED,
+        "quiet_now": channels.in_quiet_hours(), "can_test_channels": bool(chans) and has_capability(request.user, "test_alert_channels"),
+        "test_results": test_results}
+
+
 @require_capability("view_metadata")
 def alerts_view(request):
-    return render(request, "console/alerts.html", {
-        "open": Alert.objects.filter(resolved_at__isnull=True).order_by("-opened_at"),
-        "recent": Alert.objects.filter(resolved_at__isnull=False).order_by("-resolved_at")[:20]})
+    return render(request, "console/alerts.html", _alerts_context(request))
+
+
+@require_POST
+@require_capability("test_alert_channels")
+def alerts_test_channels(request):
+    """Send a clearly-labelled test notice to each configured channel. Audited; carries no real alert data."""
+    results = channels.send_test(requests.post)
+    record("alerts.test_notification", request=request, details={"results": {c: ok for c, ok, _ in results}})
+    return render(request, "console/alerts.html", _alerts_context(request, [
+        {"label": channels.LABELS[c], "ok": ok, "reason": why} for c, ok, why in results]))
 
 
 @require_capability("approve")

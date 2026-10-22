@@ -5,9 +5,34 @@
 <div class="ph"><div><h1>{% trans "Alerts" %}</h1><p>{% trans "Problems the console detected. They resolve on their own when the condition clears." %}</p></div></div>
 <div class="stack">
 <section class="card" aria-labelledby="open-h"><div class="card-head"><div class="card-title" id="open-h">{% trans "Open" %}</div><span class="badge badge-plain">{{ open|length }}</span></div>
-{% if open %}<ul class="list">{% for a in open %}<li class="list-top"><span class="badge {% if a.severity == 'page' %}badge-err{% else %}badge-warn{% endif %}">{% if a.severity == 'page' %}{% trans "Urgent" %}{% else %}{% trans "Warning" %}{% endif %}</span><span class="spacer"><span class="cell-primary">{{ a.title }}</span>{% if a.detail %}<div class="cell-secondary">{{ a.detail }}</div>{% endif %}</span><span class="muted">{% ago a.opened_at %}</span></li>{% endfor %}</ul>
-{% else %}{% include "components/_empty.html" with icon="circle-check" title=_("All clear") text=_("No open alerts. New problems appear here and in Slack if a webhook is configured.") %}{% endif %}</section>
+{% if open %}<ul class="list">{% for a in open %}<li class="list-top"><span class="badge {% if a.severity == 'page' %}badge-err{% else %}badge-warn{% endif %}">{% if a.severity == 'page' %}{% trans "Urgent" %}{% else %}{% trans "Warning" %}{% endif %}</span><span class="spacer"><span class="cell-primary">{{ a.title }}</span>{% if a.detail %}<div class="cell-secondary">{{ a.detail }}</div>{% endif %}</span><span class="muted">{% if channels %}{% if a.notified_at %}{% trans "Sent to" %} {{ channels|join:", " }} · {% elif quiet_now and a.severity != 'page' %}{% trans "Held for quiet hours" %} · {% else %}{% trans "Sending soon" %} · {% endif %}{% endif %}{% ago a.opened_at %}</span></li>{% endfor %}</ul>
+{% else %}{% include "components/_empty.html" with icon="circle-check" title=_("All clear") text=_("No open alerts. New problems appear here, and in the channels below if you set any up.") %}{% endif %}</section>
+
+<section class="card" aria-labelledby="ch-h"><div class="card-head"><div class="card-title" id="ch-h">{% trans "Notifications" %}</div></div>
+  <div class="card-body stack">
+  {% if channels %}
+    <p>{% trans "New alerts are also sent to:" %} {% for c in channels %}<span class="badge badge-ok">{{ c }}</span> {% endfor %}
+      {% if notify_resolved %}<span class="muted">{% trans "A notice is sent when an alert resolves." %}</span>{% endif %}</p>
+    {% if rules.quiet %}<p class="muted">{% trans "Quiet hours:" %} {{ rules.quiet }}{% if quiet_now %} <span class="badge badge-info">{% trans "quiet now" %}</span>{% endif %}</p>{% endif %}
+    {% if test_results %}<ul class="list">{% for r in test_results %}<li class="list-top"><span class="badge {% if r.ok %}badge-ok{% else %}badge-err{% endif %}">{% if r.ok %}{% trans "Delivered" %}{% else %}{% trans "Failed" %}{% endif %}</span><span class="spacer"><span class="cell-primary">{{ r.label }}</span>{% if r.reason %}<div class="cell-secondary">{{ r.reason }}</div>{% endif %}</span></li>{% endfor %}</ul>{% endif %}
+    {% if can_test_channels %}<form method="post" action="{% url 'alerts_test_channels' %}">{% csrf_token %}<button class="btn" type="submit">{% icon "send" %}<span>{% trans "Send a test notification" %}</span></button></form>{% endif %}
+  {% else %}
+    <div class="callout callout-info">{% icon "info" %}<div><div class="callout-title">{% trans "Alerts only appear on this page" %}</div><p>{% trans "To get them in Slack or another tool, set MC_ALERT_SLACK_WEBHOOK_URL or MC_ALERT_WEBHOOK_URL (see the README, Alerts)." %}</p></div></div>
+  {% endif %}
+  </div></section>
+
 <section class="card" aria-labelledby="res-h"><div class="card-head"><div class="card-title" id="res-h">{% trans "Recently resolved" %}</div></div>
 {% if recent %}<ul class="list">{% for a in recent %}<li><span class="spacer">{{ a.title }}</span><span class="muted">{% trans "Resolved" %} {% ago a.resolved_at %}</span></li>{% endfor %}</ul>{% else %}<div class="card-body muted">{% trans "Nothing resolved yet." %}</div>{% endif %}</section>
+
+<section class="card" aria-labelledby="rules-h"><div class="card-head"><div class="card-title" id="rules-h">{% trans "When alerts open" %}</div></div>
+  <div class="card-body"><dl class="kv">
+    <dt>{% trans "Bounce rate" %}</dt><dd>{{ rules.bounce }}</dd>
+    <dt>{% trans "Complaint rate" %}</dt><dd>{{ rules.complaint }}</dd>
+    <dt>{% trans "Sender apps" %}</dt><dd>{% blocktrans with n=rules.app_min_sample %}The same rates for each app, once it has sent at least {{ n }} in 24 hours{% endblocktrans %}</dd>
+    <dt>{% trans "Account-wide rates" %}</dt><dd>{% blocktrans with n=rules.min_sample %}Only after at least {{ n }} sends in 24 hours{% endblocktrans %}</dd>
+    <dt>{% trans "Daily quota" %}</dt><dd>{{ rules.quota }}</dd>
+    <dt>{% trans "No events" %}</dt><dd>{{ rules.silent }}</dd>
+  </dl></div>
+  <div class="card-body muted">{% trans "These come from MC_ALERT_* settings (README, Alerts). SES itself starts reviewing an account at about 5% bounces and 0.1% complaints." %}</div></section>
 </div>
 {% endblock %}

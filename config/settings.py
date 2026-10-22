@@ -4,7 +4,11 @@ Every secret comes from the environment (injected by ECS from Secrets Manager).
 Nothing here reads a .env file on purpose: never `source` env files.
 """
 import os
+import re
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -14,6 +18,16 @@ def env(name, default=None, required=False):
     if required and val in (None, ""):
         raise RuntimeError(f"Missing required environment variable {name}")
     return val
+
+
+def env_float(name, default):
+    raw = os.environ.get(name, "")
+    if raw == "":
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        raise RuntimeError(f"{name} must be a number, got {raw!r}") from None
 
 
 def env_bool(name, default=False):
@@ -176,12 +190,44 @@ MAIL_ARCHIVE_ID = env("MC_MAIL_ARCHIVE_ID", "")
 BULK_SUPPRESSION_APPROVAL_THRESHOLD = 50
 APPROVAL_TTL_HOURS = 24
 BODY_REVEAL_REQUIRES_REASON = True
+# Rates are fractions: 0.02 = 2%. SES itself reviews accounts at about 5% bounces and 0.1% complaints.
 ALERT_THRESHOLDS = {
-    "bounce_warn": 0.02, "bounce_page": 0.04,
-    "complaint_warn": 0.0005, "complaint_page": 0.0008,
-    "quota_warn": 0.80,
+    "bounce_warn": env_float("MC_ALERT_BOUNCE_WARN", 0.02), "bounce_page": env_float("MC_ALERT_BOUNCE_PAGE", 0.04),
+    "complaint_warn": env_float("MC_ALERT_COMPLAINT_WARN", 0.0005), "complaint_page": env_float("MC_ALERT_COMPLAINT_PAGE", 0.0008),
+    "quota_warn": env_float("MC_ALERT_QUOTA_WARN", 0.80),
 }
-ALERT_SLACK_WEBHOOK_URL = env("MC_ALERT_SLACK_WEBHOOK_URL", "")  # from Secrets Manager
+for _kind in ("bounce", "complaint"):
+    if not 0 < ALERT_THRESHOLDS[f"{_kind}_warn"] < ALERT_THRESHOLDS[f"{_kind}_page"] <= 1:
+        raise ImproperlyConfigured(f"MC_ALERT_{_kind.upper()}_WARN must be above 0 and below MC_ALERT_{_kind.upper()}_PAGE, and both at most 1 (fractions, 0.02 = 2%).")
+if not 0 < ALERT_THRESHOLDS["quota_warn"] <= 1:
+    raise ImproperlyConfigured("MC_ALERT_QUOTA_WARN must be above 0 and at most 1.")
+ALERT_MIN_SAMPLE = int(env_float("MC_ALERT_MIN_SAMPLE", 200))          # no account-wide rate alert below this many sends in 24h
+ALERT_APP_MIN_SAMPLE = int(env_float("MC_ALERT_APP_MIN_SAMPLE", 50))   # ... and none for one sender app below this many
+# "No events" alert: wait this long, but at least as long as GAP_FACTOR times the usual gap between sends (capped), so a
+# sender that mails a few times a day is not reported as silent between mails.
+ALERT_SILENT_MIN_MINUTES = int(env_float("MC_ALERT_SILENT_MIN_MINUTES", 60))
+ALERT_SILENT_GAP_FACTOR = env_float("MC_ALERT_SILENT_GAP_FACTOR", 3.0)
+ALERT_SILENT_MAX_HOURS = env_float("MC_ALERT_SILENT_MAX_HOURS", 24.0)
+
+# Notification channels. Alerts always appear in the console; these push them elsewhere. https only.
+ALERT_SLACK_WEBHOOK_URL = env("MC_ALERT_SLACK_WEBHOOK_URL", "")
+ALERT_WEBHOOK_URL = env("MC_ALERT_WEBHOOK_URL", "")            # generic JSON webhook (any tool that accepts a POST)
+ALERT_WEBHOOK_SECRET = env("MC_ALERT_WEBHOOK_SECRET", "")      # optional: signs each request (see README, Alerts)
+ALERT_QUIET_HOURS = env("MC_ALERT_QUIET_HOURS", "")            # e.g. "22:00-07:00": warnings wait; urgent alerts never do
+ALERT_QUIET_TZ = env("MC_ALERT_QUIET_TZ", "UTC")
+ALERT_NOTIFY_RESOLVED = env_bool("MC_ALERT_NOTIFY_RESOLVED", True)
+for _name, _url in (("MC_ALERT_SLACK_WEBHOOK_URL", ALERT_SLACK_WEBHOOK_URL), ("MC_ALERT_WEBHOOK_URL", ALERT_WEBHOOK_URL)):
+    # Alert text can name addresses and domains: never send it over plain http (a local test receiver in DEBUG is fine).
+    if _url and not (_url.startswith("https://") or (DEBUG and re.match(r"http://(localhost|127\.0\.0\.1)[:/]", _url))):
+        raise ImproperlyConfigured(f"{_name} must be an https:// URL.")
+_QUIET = re.fullmatch(r"(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})", ALERT_QUIET_HOURS.strip()) if ALERT_QUIET_HOURS.strip() else None
+if ALERT_QUIET_HOURS.strip():
+    if not _QUIET or not all(int(_QUIET[i]) < (24 if i in (1, 3) else 60) for i in (1, 2, 3, 4)):
+        raise ImproperlyConfigured("MC_ALERT_QUIET_HOURS must look like 22:00-07:00 (24-hour clock).")
+    try:
+        ZoneInfo(ALERT_QUIET_TZ)
+    except ZoneInfoNotFoundError:
+        raise ImproperlyConfigured(f"MC_ALERT_QUIET_TZ {ALERT_QUIET_TZ!r} is not a known time zone (use e.g. Asia/Kolkata).") from None
 
 # --- White-labelling: name, logo and accent are configurable ------------------------------
 BRAND_NAME = env("MC_BRAND_NAME", "Mail Console")

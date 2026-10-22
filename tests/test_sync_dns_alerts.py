@@ -194,7 +194,7 @@ def test_notify_once_per_alert(settings):
     class R:
         def raise_for_status(self):
             pass
-    post = lambda url, json, timeout: calls.append(json) or R()
+    post = lambda url, json, timeout, **kw: calls.append(json) or R()
     assert alerts.notify_pending(post) == 1 and alerts.notify_pending(post) == 0
     assert "T" in calls[0]["text"]
 
