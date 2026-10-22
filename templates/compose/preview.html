@@ -1,0 +1,27 @@
+{% extends "base.html" %}{% load i18n ui %}
+{% block title %}{% trans "Preview" %}{% endblock %}
+{% block crumbs %}<a href="{% url 'compose' %}">{% trans "Compose" %}</a> / <span aria-current="page">{% trans "Preview" %}</span>{% endblock %}
+{% block content %}
+<div class="ph"><div><h1>{% trans "Check before sending" %}</h1><p>{% trans "This is exactly what will be sent. Sending cannot be undone." %}</p></div></div>
+<div class="grid-main">
+  <section class="card" aria-labelledby="pv-h"><div class="card-head"><div class="card-title" id="pv-h">{{ p.subject }}</div></div>
+    <div class="card-body stack">
+      <dl class="kv">
+        <dt>{% trans "From" %}</dt><dd class="mono">{{ p.from_header }}</dd>
+        <dt>{% trans "To" %}</dt><dd class="mono">{{ p.to|join:", " }}</dd>
+        {% if p.cc %}<dt>{% trans "Cc" %}</dt><dd class="mono">{{ p.cc|join:", " }}</dd>{% endif %}
+        {% if p.bcc %}<dt>{% trans "Bcc" %}</dt><dd class="mono">{{ p.bcc|join:", " }}</dd>{% endif %}
+        {% if p.reply_to %}<dt>{% trans "Replies go to" %}</dt><dd class="mono">{{ p.reply_to }}</dd>{% endif %}
+      </dl>
+      <pre class="preview-text">{{ p.text }}</pre>
+    </div></section>
+  <div class="stack">
+    <section class="card"><div class="card-head"><div class="card-title">{% trans "Send" %}</div></div>
+      <form class="card-body stack" method="post" action="{% url 'compose_send' d.pk %}" data-confirm="{% blocktrans with n=n %}Send this message to {{ n }} recipient(s) now?{% endblocktrans %}" data-confirm-label="{% trans 'Send now' %}">{% csrf_token %}
+        <input type="hidden" name="hash" value="{{ hash }}">
+        <p class="muted">{% blocktrans with n=n h=limits.hour_left %}{{ n }} recipient(s). You have {{ h }} left this hour.{% endblocktrans %}</p>
+        <div class="btn-group"><button class="btn btn-primary" type="submit">{% icon "send" %}<span>{% trans "Send now" %}</span></button><a class="btn" href="{% url 'compose_edit' d.pk %}">{% trans "Edit" %}</a></div>
+      </form></section>
+  </div>
+</div>
+{% endblock %}

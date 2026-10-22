@@ -1,0 +1,33 @@
+{% extends "base.html" %}{% load i18n ui %}
+{% block title %}{% trans "Compose" %}{% endblock %}
+{% block crumbs %}<span aria-current="page">{% trans "Compose" %}</span>{% endblock %}
+{% block content %}
+<div class="ph"><div><h1>{% trans "Compose" %}</h1><p>{% trans "Write and send a one-off message from one of your sending addresses. Every send needs your passkey, is limited, and appears in Sent mail." %}</p></div>
+  <span class="btn-group">{% if can_manage_senders %}<a class="btn" href="{% url 'compose_senders' %}">{% icon "settings" %}<span>{% trans "Sending addresses" %}</span></a>{% endif %}
+  {% if senders %}<a class="btn btn-primary" href="{% url 'compose_new' %}">{% icon "plus" %}<span>{% trans "New message" %}</span></a>{% endif %}</span></div>
+<div class="stack">
+  {% if not senders %}
+  <div class="callout callout-warn" role="status">{% icon "triangle-alert" %}<div><div class="callout-title">{% trans "No sending address is switched on" %}</div>
+    <p>{% if can_manage_senders %}{% trans "Turn one on under Sending addresses." %}{% else %}{% trans "Ask a security admin to switch one on." %}{% endif %}</p></div></div>
+  {% endif %}
+
+  <section class="card" aria-labelledby="dr-h"><div class="card-head"><div class="card-title" id="dr-h">{% trans "Your drafts" %}</div><span class="badge badge-plain">{{ drafts|length }}</span></div>
+  {% if drafts %}<ul class="list">{% for d in drafts %}
+    <li class="list-top"><span class="spacer"><span class="cell-primary">{{ d.subject|default:_("(no subject)") }}</span>
+      <div class="cell-secondary">{% if d.from_address %}{{ d.from_address }}{% else %}{% trans "No From address yet" %}{% endif %} · {% ago d.updated_at %}</div>
+      {% if d.shown_state == "unknown" %}<div class="cell-secondary"><span class="badge badge-warn">{% trans "May already have been sent" %}</span> {% trans "AWS did not answer clearly. Check Sent mail before doing anything else." %}</div>
+      {% elif d.shown_state == "sending" %}<div class="cell-secondary"><span class="badge badge-info">{% trans "Sending…" %}</span></div>{% endif %}</span>
+      {% if d.shown_state == "draft" %}<a class="btn btn-sm" href="{% url 'compose_edit' d.pk %}">{% trans "Open" %}</a>{% endif %}
+      {% if d.shown_state == "unknown" %}<form method="post" action="{% url 'compose_release' d.pk %}" data-confirm="{% trans 'Only continue if you have checked Sent mail and the message did NOT go out. Otherwise the recipient could get it twice.' %}" data-confirm-label="{% trans 'It did not go out' %}">{% csrf_token %}<button class="btn btn-sm" type="submit">{% trans "Reopen as draft" %}</button></form>{% endif %}
+      <form method="post" action="{% url 'compose_delete' d.pk %}" data-confirm="{% trans 'Delete this draft?' %}" data-confirm-label="{% trans 'Delete' %}">{% csrf_token %}<button class="btn btn-sm btn-danger" type="submit">{% trans "Delete" %}</button></form></li>
+  {% endfor %}</ul>
+  {% else %}{% include "components/_empty.html" with icon="mail" title=_("No drafts") text=_("Start a message with New message. Drafts are private to you.") %}{% endif %}</section>
+
+  <section class="card" aria-labelledby="se-h"><div class="card-head"><div class="card-title" id="se-h">{% trans "Sent by you" %}</div>
+    <span class="muted">{% blocktrans with h=limits.hour_left d=limits.day_left %}Recipients left: {{ h }} this hour, {{ d }} today{% endblocktrans %}</span></div>
+  {% if sent %}<table class="table"><thead><tr><th>{% trans "Sent" %}</th><th>{% trans "From" %}</th><th>{% trans "Subject" %}</th><th class="col-num">{% trans "Recipients" %}</th><th></th></tr></thead><tbody>
+    {% for s in sent %}<tr><td class="muted">{% ago s.sent_at %}</td><td class="mono">{{ s.from_address }}</td><td class="cell-primary">{{ s.subject }}</td><td class="col-num num">{{ s.recipient_count }}</td>
+      <td class="col-actions"><a class="btn btn-sm" href="{% url 'messages' %}?q={{ s.ses_message_id|urlencode }}">{% trans "Delivery status" %}</a></td></tr>{% endfor %}</tbody></table>
+  {% else %}<div class="card-body muted">{% trans "Nothing sent from here yet." %}</div>{% endif %}</section>
+</div>
+{% endblock %}

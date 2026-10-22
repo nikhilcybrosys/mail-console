@@ -1,0 +1,19 @@
+{% extends "base.html" %}{% load i18n ui %}
+{% block title %}{% trans "New message" %}{% endblock %}
+{% block crumbs %}<a href="{% url 'compose' %}">{% trans "Compose" %}</a> / <span aria-current="page">{% if d.pk %}{% trans "Edit" %}{% else %}{% trans "New message" %}{% endif %}</span>{% endblock %}
+{% block content %}
+<div class="ph"><div><h1>{% if d.pk %}{% trans "Edit message" %}{% else %}{% trans "New message" %}{% endif %}</h1><p>{% trans "Plain text. Links starting with http:// or https:// become clickable. Nothing you type can become formatting or code." %}</p></div></div>
+{% if errors %}<div class="callout callout-err" role="alert">{% icon "circle-alert" %}<div><div class="callout-title">{% trans "Fix these before sending" %}</div><ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul></div></div><br>{% endif %}
+<form method="post" class="card"><div class="card-body stack">{% csrf_token %}
+  <div class="field"><label class="label" for="f-from">{% trans "From" %}</label>
+    <select class="select" id="f-from" name="from_address" required><option value="">{% trans "Choose…" %}</option>
+      {% for s in senders %}<option value="{{ s.address }}" {% if d.from_address == s.address %}selected{% endif %}>{% if s.display_name %}{{ s.display_name }} &lt;{{ s.address }}&gt;{% else %}{{ s.address }}{% endif %}</option>{% endfor %}</select></div>
+  <div class="field"><label class="label" for="f-to">{% trans "To" %}</label><textarea class="textarea" id="f-to" name="to" rows="2" autocomplete="off" spellcheck="false">{{ d.to_text }}</textarea>
+    <span class="help">{% blocktrans with n=max_recipients %}One or more addresses, separated by commas or new lines. At most {{ n }} recipients in total.{% endblocktrans %}</span></div>
+  <div class="field"><label class="label" for="f-cc">{% trans "Cc" %} <span class="muted">({% trans "optional" %})</span></label><textarea class="textarea" id="f-cc" name="cc" rows="1" autocomplete="off" spellcheck="false">{{ d.cc_text }}</textarea></div>
+  <div class="field"><label class="label" for="f-bcc">{% trans "Bcc" %} <span class="muted">({% trans "optional" %})</span></label><textarea class="textarea" id="f-bcc" name="bcc" rows="1" autocomplete="off" spellcheck="false">{{ d.bcc_text }}</textarea></div>
+  <div class="field"><label class="label" for="f-subject">{% trans "Subject" %}</label><input class="input" id="f-subject" name="subject" maxlength="500" value="{{ d.subject }}" autocomplete="off"></div>
+  <div class="field"><label class="label" for="f-body">{% trans "Message" %}</label><textarea class="textarea" id="f-body" name="body" rows="14">{{ d.body }}</textarea></div>
+  <div class="btn-group"><button class="btn btn-primary" type="submit" name="action" value="preview">{% trans "Check and preview" %}</button><button class="btn" type="submit" name="action" value="save">{% trans "Save draft" %}</button><a class="btn btn-ghost" href="{% url 'compose' %}">{% trans "Back" %}</a></div>
+</div></form>
+{% endblock %}
