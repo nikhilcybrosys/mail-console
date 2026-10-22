@@ -20,6 +20,7 @@ from apps.approvals.models import ApprovalRequest
 from apps.audit.models import AuditLog
 from apps.audit.service import record, verify_chain
 from apps.core.rbac import ROLES, has_capability, require_capability
+from apps.core.scope import scoped_identities
 from apps.core.templatetags.ui import STATES
 from apps.sesdata import metrics, setupcheck, sync
 from apps.sesdata.events import SUPPRESSION_SUBTYPES  # noqa: F401  (re-exported for templates/tests)
@@ -336,7 +337,7 @@ def _latest(model, region, key):
 @require_capability("view_metadata")
 def identities(request):
     region = _region(request)
-    rows = _scoped_identities(request.user, _latest(IdentitySnapshot, region, "identity"))
+    rows = scoped_identities(request.user, _latest(IdentitySnapshot, region, "identity"))
     checks = {}
     for r in DnsCheckResult.objects.order_by("checked_at"):
         checks.setdefault(r.domain, {})[(r.record_kind, tuple(r.expected))] = r
@@ -345,13 +346,6 @@ def identities(request):
         it["failing"] = sum(1 for c in it["checks"] if not c.ok)
     return render(request, "console/identities.html", {
         "items": items, "failing_total": sum(it["failing"] for it in items), "checks_total": sum(len(it["checks"]) for it in items)})
-
-
-def _scoped_identities(user, rows):
-    if not user.scope_domains:
-        return rows
-    allowed = {d.lower() for d in user.scope_domains}
-    return [r for r in rows if r.identity.lower() in allowed or r.identity.lower().split("@")[-1] in allowed]
 
 
 @require_capability("view_metadata")

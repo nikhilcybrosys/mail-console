@@ -196,3 +196,26 @@ def test_write_role_test_button_needs_step_up_and_is_audited(settings, monkeypat
     assert AuditLog.objects.filter(action="setup.test_write_roles", actor="s2@example.com").exists()
     d, _ = login(DELIVERABILITY_ADMIN, "d@example.com", step_up=True)
     assert d.post(reverse("setup_test_write_roles")).status_code == 403  # only security admins may assume write roles
+
+
+def test_scoped_user_only_sees_identities_in_their_scope(settings):
+    """The page must not leak identity names a scoped user cannot see on Domains and DNS."""
+    wire(settings)
+    IdentitySnapshot.objects.create(aws_account_id="1", region=REG, identity="secret-brand.com", identity_type="DOMAIN",
+                                    verified=False, dkim_status="PENDING", default_config_set="")
+    IdentitySnapshot.objects.create(aws_account_id="1", region=REG, identity="ceo@secret-brand.com", identity_type="EMAIL_ADDRESS",
+                                    verified=False, default_config_set="")
+    login(SECURITY_ADMIN, "unscoped@example.com")
+    all_text = " ".join(c.detail for c in setupcheck.run_checks(REG, sqs_client=FakeSqs(), user=None))
+    assert "secret-brand.com" in all_text  # unscoped view sees everything
+    c, _ = login(DELIVERABILITY_ADMIN, "scoped@example.com", scope_domains=["example.com"])
+    html = c.get(reverse("setup_check")).content.decode()
+    assert "secret-brand.com" not in html and "ceo@" not in html
+
+
+def test_scoped_identities_helper_matches_addresses_by_domain():
+    from types import SimpleNamespace as NS
+    from apps.core.scope import scoped_identities
+    rows = [NS(identity="example.com"), NS(identity="a@example.com"), NS(identity="Other.com"), NS(identity="b@other.com")]
+    assert [r.identity for r in scoped_identities(NS(scope_domains=["EXAMPLE.com"]), rows)] == ["example.com", "a@example.com"]
+    assert scoped_identities(NS(scope_domains=[]), rows) == rows and scoped_identities(None, rows) == rows

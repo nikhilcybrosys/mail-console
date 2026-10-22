@@ -11,6 +11,8 @@ from datetime import timedelta
 from django.conf import settings
 from django.utils import timezone
 
+from apps.core.scope import scoped_identities
+
 OK, WARN, FAIL, INFO = "ok", "warn", "fail", "info"
 _ORDER = {OK: 0, INFO: 0, WARN: 1, FAIL: 2}
 SYNC_STALE = timedelta(minutes=15)
@@ -46,7 +48,7 @@ def _short(exc):
 
 
 # ---------------------------------------------------------------- SES account and identities
-def _ses_checks(region, now):
+def _ses_checks(region, now, user):
     from .models import AccountSnapshot
 
     g, out = "Amazon SES", []
@@ -76,7 +78,7 @@ def _ses_checks(region, now):
                          "Open the SES console for the reason; fix the cause, then ask AWS to lift it."))
 
     from .models import IdentitySnapshot
-    idents = _latest(IdentitySnapshot, region, "identity")
+    idents = scoped_identities(user, _latest(IdentitySnapshot, region, "identity"))  # same visibility as Domains and DNS
     if not idents:
         out.append(Check(g, "idents", "No sending identities", WARN, "SES has no verified domain or address in this region.",
                          "Verify a domain in the SES console."))
@@ -274,7 +276,7 @@ def _hardening_checks():
 
 def run_checks(region, *, user=None, sqs_client=None, now=None):
     now = now or timezone.now()
-    ses, idents = _ses_checks(region, now)
+    ses, idents = _ses_checks(region, now, user)
     return ses + _pipeline_checks(region, idents, now, sqs_client) + _access_checks(user) + _hardening_checks()
 
 

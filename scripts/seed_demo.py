@@ -107,7 +107,8 @@ class Demo:  # fake reader: no AWS involved
         return {"SendingOptions": {"SendingEnabled": True}, "TrackingOptions": {}}
 
     def get_event_destinations(self, n):
-        return [{"Name": "sns-events", "Enabled": True}] if n == "mc-default" else []
+        return [{"Name": "sns-events", "Enabled": True, "MatchingEventTypes": ["SEND", "DELIVERY", "BOUNCE", "COMPLAINT", "DELIVERY_DELAY"],
+                 "SnsDestination": {"TopicArn": f.TOPIC}}] if n == "mc-default" else []
 
     def iter_suppressed(self):
         for a, r in (("Bounced.User@Example.com", "BOUNCE"), ("angry@globex.com", "COMPLAINT"), ("gone@initech.co", "BOUNCE")):
