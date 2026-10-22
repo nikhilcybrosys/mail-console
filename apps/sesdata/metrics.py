@@ -35,6 +35,36 @@ def reputation_estimate(hours=24, now=None):
             "bounces": bounces, "complaints": complaints}
 
 
+def reputation_by_app(hours=24, now=None):
+    """The same estimate as `reputation_estimate`, split by sender app (the `source_app` tag). Untagged mail is "(untagged)"."""
+    now = now or timezone.now()
+    since = now - timedelta(hours=hours)
+    key = "message__source_app"
+
+    def count(**filters):
+        return {r[key] or "(untagged)": r["n"] for r in MessageEvent.objects.filter(event_ts__gte=since, **filters).values(key).annotate(n=Count("id"))}
+
+    sent = count(event_type="send")
+    bounces = {}
+    for app, n in count(event_type="bounce", payload__bounce__bounceType="Permanent").items():
+        bounces[app] = n
+    suppression_driven = {r[key] or "(untagged)": r["n"] for r in MessageEvent.objects.filter(
+        event_ts__gte=since, event_type="bounce", payload__bounce__bounceType="Permanent",
+        payload__bounce__bounceSubType__in=list(SUPPRESSION_SUBTYPES)).values(key).annotate(n=Count("id"))}
+    complaints = count(event_type="complaint")
+    out = {}
+    for app, n in sent.items():
+        b = bounces.get(app, 0) - suppression_driven.get(app, 0)  # suppression-driven bounces do not count toward SES reputation
+        out[app] = {"sample": n, "bounces": b, "complaints": complaints.get(app, 0),
+                    "bounce_rate": b / n, "complaint_rate": complaints.get(app, 0) / n}
+    return out
+
+
+def send_count(config_set, days=7, now=None):
+    now = now or timezone.now()
+    return Message.objects.filter(config_set=config_set, sent_at__gte=now - timedelta(days=days), sent_at__lte=now).count()
+
+
 def top_bounce_reasons(hours=168, limit=8, now=None):
     now = now or timezone.now()
     qs = MessageEvent.objects.filter(event_type="bounce", event_ts__gte=now - timedelta(hours=hours))

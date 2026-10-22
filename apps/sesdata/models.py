@@ -152,7 +152,9 @@ class Alert(models.Model):
     detail = models.TextField(blank=True)
     opened_at = models.DateTimeField(auto_now_add=True)
     resolved_at = models.DateTimeField(null=True, blank=True)
-    notified_at = models.DateTimeField(null=True, blank=True)
+    notified_at = models.DateTimeField(null=True, blank=True)  # set once every configured channel has the "firing" notice
+    notified_channels = models.JSONField(default=list, blank=True)  # channels that already have it (a failed one is retried alone)
+    resolved_notified_at = models.DateTimeField(null=True, blank=True)
 
 
 class BodyAccessLog(models.Model):

@@ -16,6 +16,7 @@ urlpatterns = [
     path("identities/", views.identities, name="identities"),
     path("config-sets/", views.config_sets, name="config_sets"),
     path("alerts/", views.alerts_view, name="alerts"),
+    path("alerts/test-notification/", views.alerts_test_channels, name="alerts_test_channels"),
     path("approvals/", views.approvals_queue, name="approvals"),
     path("approvals/<int:pk>/decide/", views.approval_decide, name="approval_decide"),
     path("audit/", views.audit_view, name="audit"),
