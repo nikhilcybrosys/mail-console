@@ -1,0 +1,41 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "IdentityChanges",
+      "Effect": "Allow",
+      "Action": ["ses:DeleteEmailIdentity", "ses:PutEmailIdentityDkimAttributes", "ses:PutEmailIdentityMailFromAttributes"],
+      "Resource": "arn:aws:ses:__REGION__:__ACCOUNT_ID__:identity/*",
+      "Condition": {
+        "StringEquals": {"aws:RequestedRegion": "__REGION__"},
+        "StringLike": {"aws:SourceIdentity": "*@__EMAIL_DOMAIN__"}
+      }
+    },
+    {
+      "Sid": "EventDestinationChanges",
+      "Effect": "Allow",
+      "Action": ["ses:CreateConfigurationSetEventDestination", "ses:UpdateConfigurationSetEventDestination", "ses:DeleteConfigurationSetEventDestination"],
+      "Resource": "arn:aws:ses:__REGION__:__ACCOUNT_ID__:configuration-set/*",
+      "Condition": {
+        "StringEquals": {"aws:RequestedRegion": "__REGION__"},
+        "StringLike": {"aws:SourceIdentity": "*@__EMAIL_DOMAIN__"}
+      }
+    },
+    {
+      "Sid": "AccountLevelSettings",
+      "Effect": "Allow",
+      "Action": ["ses:PutAccountSendingAttributes", "ses:PutAccountSuppressionAttributes"],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {"aws:RequestedRegion": "__REGION__"},
+        "StringLike": {"aws:SourceIdentity": "*@__EMAIL_DOMAIN__"}
+      }
+    },
+    {
+      "Sid": "NeverSendMail",
+      "Effect": "Deny",
+      "Action": ["ses:SendEmail", "ses:SendBulkEmail", "ses:SendRawEmail", "ses:SendCustomVerificationEmail", "ses:SendTemplatedEmail", "ses:SendBulkTemplatedEmail", "ses:SendBounce", "ses:Send*"],
+      "Resource": "*"
+    }
+  ]
+}

@@ -14,7 +14,6 @@ concurrency:
 
 env:
   PYTHON_VERSION: "3.12"
-  TERRAFORM_VERSION: "1.9.8"
 
 jobs:
   test:
@@ -61,24 +60,6 @@ jobs:
           MC_DEBUG: "1"
           MC_SECRET_KEY: ci-only
         run: python manage.py makemigrations --check --dry-run
-
-  terraform:
-    name: Terraform (fmt and validate)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
-        with:
-          terraform_version: ${{ env.TERRAFORM_VERSION }}
-          terraform_wrapper: false
-      - run: terraform fmt -check -recursive infra
-      - name: Validate both environments (no cloud credentials, no backend)
-        run: |
-          for env in staging production; do
-            (cd "infra/envs/$env" && terraform init -backend=false -input=false >/dev/null && terraform validate)
-          done
 
   supply-chain:
     name: Dependencies (vulnerabilities and licences)

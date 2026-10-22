@@ -84,6 +84,22 @@ ACTIONS = {
 }
 
 
+# The AWS (IAM) permissions each approvable action needs, run through the write role named in ACTIONS above. This table is
+# the single source of truth for aws/policies/write-*.json: tests/test_aws_policies.py fails if the policy files grant
+# anything not listed here (least privilege) or miss anything listed here (the action would be denied at run time).
+IAM_ACTIONS = {
+    "suppression.remove": ["ses:DeleteSuppressedDestination"],
+    "suppression.add": ["ses:PutSuppressedDestination"],
+    "identity.delete": ["ses:DeleteEmailIdentity"],
+    "identity.dkim": ["ses:PutEmailIdentityDkimAttributes"],
+    "identity.mail_from": ["ses:PutEmailIdentityMailFromAttributes"],
+    "account.sending": ["ses:PutAccountSendingAttributes"],
+    "account.suppression": ["ses:PutAccountSuppressionAttributes"],
+    "event_destination.change": ["ses:CreateConfigurationSetEventDestination", "ses:UpdateConfigurationSetEventDestination",
+                                 "ses:DeleteConfigurationSetEventDestination"],
+}
+
+
 def needs_approval(action, params):
     _, _, always, _ = ACTIONS[action]
     if always:

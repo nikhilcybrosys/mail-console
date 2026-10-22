@@ -21,8 +21,8 @@ There is no Node toolchain: the UI is server-rendered Django + HTMX with plain C
 files. Please keep it that way.
 
 ## Continuous integration
-Every pull request runs the tests on PostgreSQL 16, Django deployment checks, a migrations check, Terraform format and
-validation, a dependency vulnerability and licence audit, a Docker build with a smoke test of the demo, and a DCO
+Every pull request runs the tests on PostgreSQL 16, Django deployment checks, a migrations check, tests of the AWS policy files (no console role can send mail),
+a dependency vulnerability and licence audit, a Docker build with a smoke test of the demo, and a DCO
 check. Run `docker compose up --build` to try the demo locally (see the README).
 
 ## What a good change looks like

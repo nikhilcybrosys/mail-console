@@ -11,6 +11,11 @@ Project status and known gaps: `docs/STATUS.md`.
 This starts the console and PostgreSQL with made-up mail data. It runs in a development mode with a sign-in shortcut
 and is bound to `127.0.0.1`: it is for looking around, never for a real deployment (see `SECURITY.md`).
 
+## Connect it to your AWS account
+`aws/README.md` has the few CLI commands and the IAM policy files you need: an SNS topic and SQS queue that receive SES
+events, and three roles (read-only, plus two narrow write roles) that can never send mail. There is no hosting stack to
+apply: run the container on any small server. This has not yet been run against a real AWS account.
+
 ## Local development
     python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
     # throwaway Postgres on :54329 (see config/test_settings.py), then:
@@ -26,7 +31,7 @@ Never `source` env files; configuration comes from environment variables (`confi
 - `apps/sesdata`: events parser, state machine, ingest worker, SES sync, DNS checks, metrics, alerts, AWS facade
 - `apps/approvals`: four-eyes workflow; `apps/audit`: hash-chained audit log; `apps/accounts`: SSO, passkeys, sessions
 - `apps/inbound`: MIME parsing, sanitizer, redaction, mailview renderer; `apps/console`: pages
-- `infra/`: Terraform (see `infra/README.md`); `scripts/phase0_audit.py`: read-only AWS audit
+- `aws/`: the AWS setup as CLI steps and IAM policy files (`aws/README.md`); `scripts/phase0_audit.py`: read-only AWS audit
 
 ## Sign-in
 Any OpenID Connect provider with a discovery URL works (Google, Okta, Microsoft Entra, Keycloak, Authentik...):

@@ -1,5 +1,8 @@
 # Phase 0 [VERIFY] findings: Mail Console (SES)
 
+> Note: this research was done while the project still planned to ship Terraform. That plan was dropped in favour of plain AWS CLI steps and
+> IAM policy files (`aws/`), so the Terraform-specific parts below (provider coverage, `terraform destroy` warnings) are background only.
+
 Date: 2026-10-22. Method: official AWS documentation only (docs.aws.amazon.com, aws.amazon.com), no AWS credentials, no AWS API calls, no secrets read. Where a rendered page was JS-only, the machine-readable AWS sources behind it were used (AWS Service Reference JSON, AWS price-list JSON). Terraform facts come from the provider docs at tag v6.69.1 and the Terraform registry API.
 
 ## Summary

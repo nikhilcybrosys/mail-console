@@ -1,0 +1,11 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "TheHostThatRunsTheConsole",
+      "Effect": "Allow",
+      "Principal": {"Service": "__SERVICE_PRINCIPAL__"},
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}

@@ -6,5 +6,5 @@
 4. **mailview tokens are time-limited (60 s) but not single-use.** A leaked URL is usable for up to a minute by anyone, but only for content the issuer was allowed to view. Single-use needs shared state (DB row) and was skipped.
 5. **No Celery.** Two management commands (`ingest_ses_events`, `sync_ses_state`) run as ECS tasks.
 6. **Passkey step-up uses a session timestamp (10 min window)**, not a per-action challenge. A per-action assertion would be stricter.
-7. **Alert evaluation does not check DLQ depth or oldest-message age** in the app; those belong to CloudWatch alarms in Terraform.
+7. **Alert evaluation does not check DLQ depth or oldest-message age** in the app; those belong to CloudWatch alarms on the queues, which are not provided (see `aws/README.md`).
 8. **Python 3.12 / Django 5.2 / psycopg 3 / authlib / fido2 2.x** chosen; fido2's API changed in 2.x, so do not downgrade.

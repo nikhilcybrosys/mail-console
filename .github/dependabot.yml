@@ -14,9 +14,3 @@ updates:
   - package-ecosystem: docker
     directory: /
     schedule: {interval: weekly}
-  - package-ecosystem: terraform
-    directory: /infra/envs/production
-    schedule: {interval: weekly}
-  - package-ecosystem: terraform
-    directory: /infra/envs/staging
-    schedule: {interval: weekly}
