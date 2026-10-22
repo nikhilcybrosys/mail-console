@@ -279,10 +279,37 @@ def _hardening_checks():
     return out
 
 
+def _compose_checks(region):
+    """Only when Compose is switched on: is what it needs in place? (The send role itself is proved by the Test write roles button.)"""
+    from apps.compose.models import SenderAddress
+
+    g, out = "Compose", []
+    on = list(SenderAddress.objects.filter(enabled=True, address__in=settings.SEND_FROM_ADDRESSES).values_list("address", flat=True))
+    if on:
+        out.append(Check(g, "senders", "Sending addresses switched on", OK, ", ".join(sorted(on)) + "."))
+    else:
+        out.append(Check(g, "senders", "No sending address is switched on", WARN, "Nobody can send from Compose yet.", "A security admin turns an address on under Compose, Sending addresses."))
+    covered = {c.name for c in _destinations(region) for d in c.destinations
+               if d.get("Enabled") and (d.get("SnsDestination") or {}).get("TopicArn") in set(settings.EXPECTED_SNS_TOPIC_ARNS)}
+    if settings.SEND_CONFIG_SET in covered:
+        out.append(Check(g, "cset", "Compose mail will show up in Sent mail", OK, f"Configuration set {settings.SEND_CONFIG_SET} publishes events to the console."))
+    else:
+        out.append(Check(g, "cset", "Compose mail would not show up in Sent mail", WARN,
+                         f"Configuration set {settings.SEND_CONFIG_SET} was not found with an event destination to the console's topic.",
+                         "Check MC_SEND_CONFIG_SET, or add an event destination to it (aws/README.md, step 5)."))
+    from .models import IdentitySnapshot
+    verified = {i.identity.lower() for i in _latest(IdentitySnapshot, region, "identity") if i.verified}
+    missing = [a for a in on if a not in verified and a.split("@")[1] not in verified]
+    if missing:
+        out.append(Check(g, "ident", "A sending address is not on a verified identity", FAIL, ", ".join(missing),
+                         "Verify the domain or address in SES first; SES refuses to send from an unverified identity."))
+    return out
+
+
 def run_checks(region, *, user=None, sqs_client=None, now=None):
     now = now or timezone.now()
     ses, idents = _ses_checks(region, now, user)
-    return ses + _pipeline_checks(region, idents, now, sqs_client) + _access_checks(user) + _hardening_checks()
+    return ses + _pipeline_checks(region, idents, now, sqs_client) + _access_checks(user) + (_compose_checks(region) if settings.SEND_ENABLED else []) + _hardening_checks()
 
 
 def grouped(checks):
@@ -296,7 +323,7 @@ def grouped(checks):
 
 
 # ---------------------------------------------------------------- the one active test
-def try_write_roles(region, acting_email, request_id, *, assume=None):
+def try_write_roles(region, acting_email, request_id, *, assume=None, assume_sender=None):
     """Assume each configured write role once (as the acting person) to prove trust, ExternalId and SourceIdentity work.
 
     Nothing is changed in AWS; the credentials are discarded. CloudTrail records one AssumeRole per role.
@@ -316,4 +343,12 @@ def try_write_roles(region, acting_email, request_id, *, assume=None):
                              "The role's trust policy must allow the app role, your e-mail as SourceIdentity, and the ExternalId (aws/policies/trust-write-roles.json)."))
         else:
             out.append(Check(g, tier, f"The {tier} role can be assumed", OK, "Trust policy, ExternalId and your identity were accepted."))
+    if settings.SEND_ENABLED:  # Compose's send role: assumed the same way, never used to send from here
+        try:
+            (assume_sender or aws.assume_sender)(region, acting_email, request_id)
+        except Exception as exc:  # noqa: BLE001
+            out.append(Check(g, "send", "Cannot assume the send role", FAIL, f"AWS answered: {_short(exc)}.",
+                             "Its trust policy must allow the app role, your e-mail as SourceIdentity and the ExternalId (aws/policies/trust-send-role.json), and the app role must be allowed to assume it (aws/policies/app-assume-send.json)."))
+        else:
+            out.append(Check(g, "send", "The send role can be assumed", OK, "Nothing was sent. Sending still needs a message, a passkey and the limits."))
     return out

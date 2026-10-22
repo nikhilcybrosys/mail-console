@@ -514,7 +514,7 @@ def _setup_context(request, test_results=None):
         "n_fail": sum(c.status == setupcheck.FAIL for c in checks), "n_warn": sum(c.status == setupcheck.WARN for c in checks),
         "n_ok": sum(c.status in (setupcheck.OK, setupcheck.INFO) for c in checks),
         "can_test_roles": has_capability(request.user, "identity_write")
-                          and bool(settings.AWS_WRITE_ROLE_OPS_ARN or settings.AWS_WRITE_ROLE_SECURITY_ARN),
+                          and bool(settings.AWS_WRITE_ROLE_OPS_ARN or settings.AWS_WRITE_ROLE_SECURITY_ARN or settings.SEND_ENABLED),
         "test_results": test_results}
 
 

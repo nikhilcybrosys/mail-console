@@ -219,3 +219,57 @@ def test_scoped_identities_helper_matches_addresses_by_domain():
     rows = [NS(identity="example.com"), NS(identity="a@example.com"), NS(identity="Other.com"), NS(identity="b@other.com")]
     assert [r.identity for r in scoped_identities(NS(scope_domains=["EXAMPLE.com"]), rows)] == ["example.com", "a@example.com"]
     assert scoped_identities(NS(scope_domains=[]), rows) == rows and scoped_identities(None, rows) == rows
+
+
+# ---------------------------------------------------------------- Compose
+def compose_on(settings):
+    settings.SEND_ENABLED = True
+    settings.SEND_FROM_ADDRESSES = ["notifications@example.com"]
+    settings.SEND_CONFIG_SET, settings.AWS_SEND_ROLE_ARN = "mc-set", "arn:aws:iam::123456789012:role/mail-console-send"
+
+
+def test_compose_checks_only_exist_when_compose_is_on(settings):
+    wire(settings)
+    assert not [c for c in setupcheck.run_checks(REG, sqs_client=FakeSqs()) if c.group == "Compose"]
+    compose_on(settings)
+    assert [c for c in setupcheck.run_checks(REG, sqs_client=FakeSqs()) if c.group == "Compose"]
+
+
+def test_compose_is_ready_when_an_address_is_on_the_set_is_covered_and_the_identity_is_verified(settings):
+    from apps.compose.models import SenderAddress
+    wire(settings)
+    compose_on(settings)
+    SenderAddress.objects.create(address="notifications@example.com", enabled=True)
+    IdentitySnapshot.objects.update(identity="example.com")                    # the domain identity covers the address
+    c = by_key(setupcheck.run_checks(REG, sqs_client=FakeSqs()))
+    assert (c["senders"].status, c["cset"].status) == (setupcheck.OK, setupcheck.OK) and "ident" not in c
+
+
+def test_compose_problems_are_reported_with_what_to_do(settings):
+    from apps.compose.models import SenderAddress
+    wire(settings)
+    compose_on(settings)
+    c = by_key(setupcheck.run_checks(REG, sqs_client=FakeSqs()))
+    assert c["senders"].status == setupcheck.WARN and "Sending addresses" in c["senders"].fix
+    settings.SEND_CONFIG_SET = "some-other-set"
+    SenderAddress.objects.create(address="notifications@example.com", enabled=True)
+    IdentitySnapshot.objects.update(verified=False)
+    c = by_key(setupcheck.run_checks(REG, sqs_client=FakeSqs()))
+    assert c["cset"].status == setupcheck.WARN and c["ident"].status == setupcheck.FAIL
+
+
+def test_the_role_test_also_proves_the_send_role_without_sending(settings):
+    compose_on(settings)
+    settings.AWS_WRITE_ROLE_OPS_ARN = settings.AWS_WRITE_ROLE_SECURITY_ARN = ""
+    called = []
+    res = by_key(setupcheck.try_write_roles(REG, "ann@corp.example", "r1", assume=lambda *a: None, assume_sender=lambda *a: called.append(a)))
+    assert res["send"].status == setupcheck.OK and called == [(REG, "ann@corp.example", "r1")]
+
+    def refused(*a):
+        err = Exception("AccessDenied detail that must not show")
+        err.response = {"Error": {"Code": "AccessDenied"}}
+        raise err
+    res = by_key(setupcheck.try_write_roles(REG, "ann@corp.example", "r1", assume=lambda *a: None, assume_sender=refused))
+    assert res["send"].status == setupcheck.FAIL and "AccessDenied" in res["send"].detail and "must not show" not in res["send"].detail
+    settings.SEND_ENABLED = False
+    assert "send" not in by_key(setupcheck.try_write_roles(REG, "ann@corp.example", "r1", assume=lambda *a: None))
