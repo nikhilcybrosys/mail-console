@@ -20,6 +20,24 @@ and three IAM roles, all capped by a permissions boundary, **none of which can s
 > exactly what the code calls), but AWS itself has not evaluated them. Try this in a non-production account first, and
 > check the result with the policy simulator (step 7).
 
+## Where to run it: its own small server
+Give the console its own small instance (or container host) that runs nothing else, about $10 to 15 a month. This matters more
+than it looks:
+
+- An instance role applies to **every process on the machine**: anything that can reach the instance metadata service can use
+  the app role, including asking for the two write roles. The write roles only require that the caller names a person
+  (`sts:SourceIdentity`); the **approval step is enforced by the console application, not by IAM**. So if any other program on a
+  shared host is compromised, an attacker can change SES settings (delete an identity, pause sending, edit the suppression list,
+  remove the event destination) without an approval. They still cannot send mail, but they can stop yours.
+- The console also shows recipient addresses and subjects, and renders untrusted email. Keep it away from servers that hold
+  billing, customer or production data, and away from public demo machines.
+- An EC2 instance can have only **one** instance profile, so putting the console on an existing server would mean merging its
+  permissions into that server's role.
+
+Require IMDSv2 on the instance (`aws ec2 modify-instance-metadata-options --instance-id i-... --http-tokens required`). If you
+run the console in Docker with default networking, also set `--http-put-response-hop-limit 2`, otherwise the container cannot
+reach the metadata service. Allow inbound traffic on port 443 only, and restrict it to your office or VPN addresses if you can.
+
 ## What you need
 - AWS CLI v2 signed in with rights to create IAM roles and policies, SNS topics, SQS queues, and to edit SES configuration sets.
 - Python 3 (only to fill in the policy placeholders) and a checkout of this repository.
