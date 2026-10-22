@@ -166,6 +166,8 @@ def test_queue_accepts_only_our_topic_and_topic_accepts_only_ses_in_this_account
     assert q["Principal"] == {"Service": "sns.amazonaws.com"} and q["Condition"] == {"ArnEquals": {"aws:SourceArn": "__TOPIC_ARN__"}}
     ses = next(s for s in load("sns-topic-policy.json")["Statement"] if s["Principal"] == {"Service": "ses.amazonaws.com"})
     assert ses["Action"] == "sns:Publish" and ses["Condition"]["StringEquals"] == {"AWS:SourceAccount": "__ACCOUNT_ID__"}
+    # an ARN condition key must use an ARN operator (IAM Access Analyzer warns about StringLike); and only SES in this account and region
+    assert ses["Condition"]["ArnLike"] == {"aws:SourceArn": "arn:aws:ses:__REGION__:__ACCOUNT_ID__:*"} and "StringLike" not in ses["Condition"]
 
 
 @pytest.mark.django_db

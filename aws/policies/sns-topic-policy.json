@@ -16,7 +16,7 @@
       "Resource": "__TOPIC_ARN__",
       "Condition": {
         "StringEquals": {"AWS:SourceAccount": "__ACCOUNT_ID__"},
-        "StringLike": {"AWS:SourceArn": "arn:aws:ses:__REGION__:__ACCOUNT_ID__:*"}
+        "ArnLike": {"aws:SourceArn": "arn:aws:ses:__REGION__:__ACCOUNT_ID__:*"}
       }
     }
   ]
