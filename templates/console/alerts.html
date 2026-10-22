@@ -25,14 +25,14 @@
 {% if recent %}<ul class="list">{% for a in recent %}<li><span class="spacer">{{ a.title }}</span><span class="muted">{% trans "Resolved" %} {% ago a.resolved_at %}</span></li>{% endfor %}</ul>{% else %}<div class="card-body muted">{% trans "Nothing resolved yet." %}</div>{% endif %}</section>
 
 <section class="card" aria-labelledby="rules-h"><div class="card-head"><div class="card-title" id="rules-h">{% trans "When alerts open" %}</div></div>
-  <dl class="kv">
+  <div class="card-body"><dl class="kv">
     <dt>{% trans "Bounce rate" %}</dt><dd>{{ rules.bounce }}</dd>
     <dt>{% trans "Complaint rate" %}</dt><dd>{{ rules.complaint }}</dd>
     <dt>{% trans "Sender apps" %}</dt><dd>{% blocktrans with n=rules.app_min_sample %}The same rates for each app, once it has sent at least {{ n }} in 24 hours{% endblocktrans %}</dd>
     <dt>{% trans "Account-wide rates" %}</dt><dd>{% blocktrans with n=rules.min_sample %}Only after at least {{ n }} sends in 24 hours{% endblocktrans %}</dd>
     <dt>{% trans "Daily quota" %}</dt><dd>{{ rules.quota }}</dd>
     <dt>{% trans "No events" %}</dt><dd>{{ rules.silent }}</dd>
-  </dl>
+  </dl></div>
   <div class="card-body muted">{% trans "These come from MC_ALERT_* settings (README, Alerts). SES itself starts reviewing an account at about 5% bounces and 0.1% complaints." %}</div></section>
 </div>
 {% endblock %}
