@@ -15,6 +15,7 @@ import argparse
 import datetime as dt
 import json
 import pathlib
+import re
 import sys
 
 import boto3
@@ -54,8 +55,8 @@ def safe(fn, *a, **k):
         return {"_error": f"{type(exc).__name__}: {str(exc)[:200]}"}
 
 
-def audit_region(region):
-    ses = client("sesv2", region)
+def audit_region(region, ses=None, cw=None):
+    ses = ses or client("sesv2", region)
     out = {"region": region}
     acct = safe(ses.get_account)
     out["account"] = acct if "_error" in acct else {
@@ -67,7 +68,7 @@ def audit_region(region):
     out["identities"] = []
     for i in ([] if "_error" in ids else ids.get("EmailIdentities", [])):
         d = safe(ses.get_email_identity, EmailIdentity=i["IdentityName"])
-        out["identities"].append({"name": i["IdentityName"], "type": i.get("IdentityType"), "verified": i.get("VerifiedForSendingStatus"),
+        out["identities"].append({"name": i["IdentityName"], "type": i.get("IdentityType"), "verified": d.get("VerifiedForSendingStatus") if "_error" not in d else None,
                                   "dkim": d.get("DkimAttributes", {}).get("Status") if "_error" not in d else d,
                                   "dkim_origin": d.get("DkimAttributes", {}).get("SigningAttributesOrigin") if "_error" not in d else None,
                                   "mail_from": d.get("MailFromAttributes", {}).get("MailFromDomain") if "_error" not in d else None,
@@ -90,7 +91,7 @@ def audit_region(region):
         if not token:
             out["suppression_count"] = count
             break
-    cw = client("cloudwatch", region)
+    cw = cw or client("cloudwatch", region)
     end = dt.datetime.now(dt.timezone.utc)
     m = safe(cw.get_metric_data, MetricDataQueries=[{"Id": "s", "MetricStat": {"Metric": {"Namespace": "AWS/SES", "MetricName": "Send"}, "Period": 86400, "Stat": "Sum"}}],
              StartTime=end - dt.timedelta(days=14), EndTime=end)
@@ -98,20 +99,63 @@ def audit_region(region):
     return out
 
 
-def audit_iam():
-    iam = client("iam")
-    users = safe(iam.list_users)
+SES_NAME = re.compile(r"(^|[^a-z])(ses|smtp)([^a-z]|$)|amazonses|email-smtp", re.I)  # "ses" as a word, not inside "James"
+
+
+def _all_users(iam):
+    users, marker = [], None
+    while True:
+        r = safe(iam.list_users, **({"Marker": marker} if marker else {}))
+        if "_error" in r:
+            return r
+        users += r.get("Users", [])
+        if not r.get("IsTruncated"):
+            return users
+        marker = r.get("Marker")
+
+
+def _mentions_ses(doc):
+    text = json.dumps(doc, default=str).lower()
+    return "ses:" in text or "amazonses" in text
+
+
+def _key_info(iam, key):
+    last = safe(iam.get_access_key_last_used, AccessKeyId=key["AccessKeyId"])
+    info = {"id_suffix": key["AccessKeyId"][-4:], "status": key["Status"], "created": str(key["CreateDate"])[:10]}  # never the full id
+    if "_error" in last:
+        return {**info, "last_used": last}
+    u = last.get("AccessKeyLastUsed", {})
+    when = u.get("LastUsedDate")
+    return {**info, "last_used": str(when)[:10] if when else None, "last_used_service": u.get("ServiceName") if when else None,
+            "last_used_region": u.get("Region") if when else None}
+
+
+def audit_iam(iam=None):
+    """Users that look SES-related, with the reason and when each access key was last used (None = never)."""
+    iam = iam or client("iam")
+    users = _all_users(iam)
+    if isinstance(users, dict):
+        return [users]
     res = []
-    for u in ([] if "_error" in users else users.get("Users", [])):
+    for u in users:
         n = u["UserName"]
         pol = safe(iam.list_attached_user_policies, UserName=n)
         inline = safe(iam.list_user_policies, UserName=n)
-        keys = safe(iam.list_access_keys, UserName=n)
         names = [] if "_error" in pol else [p["PolicyName"] for p in pol.get("AttachedPolicies", [])]
         inl = [] if "_error" in inline else inline.get("PolicyNames", [])
-        if any("ses" in x.lower() or "email" in x.lower() for x in names + inl) or "smtp" in n.lower() or "ses" in n.lower():
-            res.append({"user": n, "attached": names, "inline": inl, "created": str(u.get("CreateDate")),
-                        "keys": [] if "_error" in keys else [{"id_suffix": k["AccessKeyId"][-4:], "status": k["Status"], "created": str(k["CreateDate"])} for k in keys.get("AccessKeyMetadata", [])]})
+        reasons = []
+        if SES_NAME.search(n):
+            reasons.append("name looks SES/SMTP-related")
+        if any(re.search(r"ses|email", x, re.I) for x in names):
+            reasons.append("an attached policy looks SES-related")
+        for pn in inl:
+            doc = safe(iam.get_user_policy, UserName=n, PolicyName=pn)
+            if "_error" not in doc and _mentions_ses(doc.get("PolicyDocument", {})):
+                reasons.append(f"inline policy {pn!r} mentions SES permissions")
+        if reasons:
+            keys = safe(iam.list_access_keys, UserName=n)
+            res.append({"user": n, "why": reasons, "attached": names, "inline": inl, "created": str(u.get("CreateDate"))[:10],
+                        "keys": [] if "_error" in keys else [_key_info(iam, k) for k in keys.get("AccessKeyMetadata", [])]})
     return res
 
 
@@ -132,6 +176,12 @@ def main():
         acc = r["account"]
         print(f"[{r['region']}] production={acc.get('production_access') if isinstance(acc, dict) else '?'} identities={len(r['identities'])} "
               f"config_sets={len(r['config_sets'])} suppressed={r.get('suppression_count')} sends14d={r.get('sends_last_14d_daily')}")
+    for u in report["iam_ses_related_users"]:
+        if "user" not in u:
+            print(f"[iam] could not list users: {u.get('_error')}")
+            continue
+        keys = ", ".join(f"...{k['id_suffix']} {k['status']} last used {k['last_used'] or 'NEVER'}" for k in u["keys"]) or "no keys"
+        print(f"[iam] {u['user']}: {'; '.join(u['why'])}; {keys}")
     return 0
 
 
