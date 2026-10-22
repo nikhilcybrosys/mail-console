@@ -21,12 +21,18 @@ def test_unwrap_requires_allowed_topic_and_fails_closed():
         unwrap(body, [])  # empty allow-list rejects everything
 
 
-def test_unwrap_rejects_garbage_and_bad_signature_version():
+def test_unwrap_rejects_garbage_and_unknown_signature_version():
     for bad in ("not json", "[]", json.dumps({"Type": "SubscriptionConfirmation", "Message": "{}"})):
         with pytest.raises(ParseError):
             unwrap(bad, TOPICS)
     with pytest.raises(ParseError):
-        unwrap(f.sns(f.send(), sig="1"), TOPICS)
+        unwrap(f.sns(f.send(), sig="3"), TOPICS)
+
+
+@pytest.mark.parametrize("sig", ["1", "2"])
+def test_unwrap_accepts_both_sns_signature_versions(sig):
+    # AWS creates SNS topics with SignatureVersion 1 by default (found against a real topic).
+    assert unwrap(f.sns(f.send(), sig=sig), TOPICS)["eventType"] == "Send"
 
 
 def test_raw_delivery_accepted():
