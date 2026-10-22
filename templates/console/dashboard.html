@@ -83,5 +83,23 @@
     {% else %}{% include "components/_empty.html" with icon="mail" title=_("No mail yet") text=_("Send a test email through a configuration set to see activity here.") %}{% endif %}
   </section>
 </div>
+<br>
+<div class="grid-2">
+  <section class="card" aria-labelledby="prov-h">
+    <div class="card-head"><div class="card-title" id="prov-h">{% trans "By recipient provider" %}</div></div>
+    {% if recipients.providers %}<table class="table"><thead><tr><th>{% trans "Provider" %}</th><th class="col-num">{% trans "Recipients" %}</th><th class="col-num">{% trans "Delivered" %}</th><th class="col-num">{% trans "Bounced" %}</th><th class="col-num">{% trans "Complaints" %}</th></tr></thead><tbody>
+      {% for p in recipients.providers %}<tr><td class="cell-primary">{{ p.name }}</td><td class="col-num num">{{ p.sent }}</td><td class="col-num num">{{ p.delivered_rate|pct:1 }}</td>
+        <td class="col-num num">{% if p.bounce_tone %}<span class="badge badge-{{ p.bounce_tone }} badge-plain">{{ p.bounce_rate|pct:1 }}</span>{% else %}{{ p.bounce_rate|pct:1 }}{% endif %}</td>
+        <td class="col-num num">{% if p.complaint_tone %}<span class="badge badge-{{ p.complaint_tone }} badge-plain">{{ p.complaint_rate|pct:2 }}</span>{% else %}{{ p.complaint_rate|pct:2 }}{% endif %}</td></tr>{% endfor %}</tbody></table>
+    <div class="card-body muted">{% trans "Consumer providers are named; a company on Google Workspace or Microsoft 365 appears under its own domain in Other domains. Rates are coloured only from 20 recipients up." %}</div>
+    {% else %}{% include "components/_empty.html" with icon="globe" title=_("No recipients in this period") text=_("Once mail is sent, you will see how each mailbox provider treats it.") %}{% endif %}
+  </section>
+  <section class="card" aria-labelledby="dom-h">
+    <div class="card-head"><div class="card-title" id="dom-h">{% trans "Domains with the most problems" %}</div></div>
+    {% if recipients.domains %}<table class="table"><thead><tr><th>{% trans "Domain" %}</th><th class="col-num">{% trans "Recipients" %}</th><th class="col-num">{% trans "Bounced" %}</th><th class="col-num">{% trans "Complaints" %}</th></tr></thead><tbody>
+      {% for d in recipients.domains %}<tr><td class="cell-primary mono">{{ d.name }}</td><td class="col-num num">{{ d.sent }}</td><td class="col-num num">{{ d.bounced }}</td><td class="col-num num">{{ d.complained }}</td></tr>{% endfor %}</tbody></table>
+    {% else %}{% include "components/_empty.html" with icon="circle-check" title=_("No problem domains") text=_("Recipient domains with bounces or complaints will be listed here.") %}{% endif %}
+  </section>
+</div>
 {% endblock %}
 {% block page_js %}<script src="{% static 'vendor/uplot/uPlot.iife.min.js' %}" defer></script><script src="{% static 'js/charts.js' %}" defer></script>{% endblock %}

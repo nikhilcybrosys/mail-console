@@ -117,6 +117,7 @@ def dashboard(request):
             attention.append({"tone": "info", "icon": "shield-check", "text": f"{n} approval{'s' if n != 1 else ''} waiting for review", "url": reverse("approvals"), "cta": "Open queue"})
     return render(request, "console/dashboard.html", {
         "snap": snap, "window": win, "tiles": tiles, "chart": chart, "meters": meters, "reasons": reasons, "apps": metrics.by_app(hours),
+        "recipients": metrics.by_provider(hours, scope_domains=request.user.scope_domains),
         "attention": attention, "quota_pct": round(100 * snap.sent_last_24h / snap.max_24h_send, 1) if snap and snap.max_24h_send else 0,
         "sample": rep["sample"], "last_event": max([v for v in metrics.last_event_by_config_set().values() if v] or [None]) if Message.objects.exists() else None,
     })
