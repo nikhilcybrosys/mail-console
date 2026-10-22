@@ -67,7 +67,7 @@ Any OpenID Connect provider with a discovery URL works (Google, Okta, Microsoft 
 - **Domain policy is required.** Set `MC_OIDC_ALLOWED_DOMAIN` to your organisation's e-mail domain (with Google the `hd`
   claim must match too), or set `MC_OIDC_ALLOW_ANY_DOMAIN=1` to accept any verified address on purpose. Without one of
   them the app refuses to start in production.
-- **People must be provisioned** with `manage.py create_console_user`. The e-mail only selects the account: the first
+- **People must be provisioned**: a security admin adds them under *Users and roles, Add a person* (passkey, audited; the address must be on `MC_OIDC_ALLOWED_DOMAIN` if set), or with `manage.py create_console_user`. The e-mail only selects the account: the first
   sign-in binds the provider's stable issuer and subject to it, and every later sign-in must present the same pair, or it
   is refused and audited (`login.identity_mismatch`). Have each person sign in soon after you add them, and reset a
   binding with `create_console_user --reset-identity`.
