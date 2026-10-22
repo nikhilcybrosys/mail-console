@@ -1,0 +1,20 @@
+{% extends "base.html" %}{% load i18n ui %}
+{% block title %}{% trans "Upload DMARC reports" %}{% endblock %}
+{% block crumbs %}<a href="{% url 'dmarc' %}">{% trans "DMARC reports" %}</a><span class="sep">/</span><span aria-current="page">{% trans "Upload" %}</span>{% endblock %}
+{% block content %}
+<div class="ph"><div><h1>{% trans "Upload DMARC reports" %}</h1><p>{% trans "Download the report attachments from the mailbox in your DMARC record's rua address (.xml, .gz or .zip) and add them here. Only reports for your own domains are kept, and only the numbers: the file itself is not stored." %}</p></div></div>
+<div class="stack">
+{% if results %}
+  <section class="card" aria-labelledby="rs-h"><div class="card-head"><div class="card-title" id="rs-h">{% trans "Result" %}</div></div>
+  <ul class="list">{% for r in results %}<li class="list-top"><span class="badge {% if r.status == 'added' %}badge-ok{% elif r.status == 'duplicate' %}badge-info{% else %}badge-err{% endif %}">{% if r.status == 'added' %}{% trans "Added" %}{% elif r.status == 'duplicate' %}{% trans "Already added" %}{% else %}{% trans "Not added" %}{% endif %}</span>
+    <span class="spacer"><span class="cell-primary mono">{{ r.filename }}</span><div class="cell-secondary">{{ r.detail }}</div></span></li>{% endfor %}</ul></section>
+{% endif %}
+  <section class="card" aria-labelledby="up-h"><div class="card-head"><div class="card-title" id="up-h">{% trans "Add reports" %}</div></div>
+  <form class="card-body stack" method="post" enctype="multipart/form-data" action="{% url 'dmarc_upload' %}">{% csrf_token %}
+    <div class="field"><label class="label" for="up-f">{% trans "Report files" %}</label><input class="input" id="up-f" type="file" name="reports" multiple required accept=".xml,.gz,.zip,application/xml,text/xml,application/gzip,application/zip">
+      <span class="help">{% blocktrans with n=max_files m=max_mb %}Up to {{ n }} files at a time, each at most {{ m }} MB.{% endblocktrans %}</span></div>
+    <div><button class="btn btn-primary" type="submit">{% trans "Add reports" %}</button></div>
+    <p class="help">{% if watched %}{% trans "Accepted for:" %} {% for d in watched %}<span class="mono">{{ d }}</span>{% if not forloop.last %}, {% endif %}{% endfor %}{% else %}{% trans "No sending domains have been synced yet, so no report can be accepted." %}{% endif %}</p>
+  </form></section>
+</div>
+{% endblock %}

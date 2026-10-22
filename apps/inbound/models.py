@@ -40,7 +40,10 @@ class InboundAttachment(models.Model):
 
 
 class DmarcReport(models.Model):
-    message = models.ForeignKey(InboundMessage, on_delete=models.CASCADE, related_name="dmarc_reports")
+    # A report either came from the inbox (message set) or was uploaded by a person (message empty, uploaded_by set).
+    message = models.ForeignKey(InboundMessage, on_delete=models.CASCADE, related_name="dmarc_reports", null=True, blank=True)
+    uploaded_by = models.CharField(max_length=254, blank=True)
+    uploaded_at = models.DateTimeField(null=True, blank=True)
     org_name = models.CharField(max_length=200)
     report_id = models.CharField(max_length=200)
     domain = models.CharField(max_length=255, db_index=True)
