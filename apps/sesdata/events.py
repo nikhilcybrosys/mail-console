@@ -65,7 +65,9 @@ def unwrap(body, expected_topics):
     """Return the inner SES event dict from an SQS message body.
 
     - SNS envelope: require Type=Notification, enforce TopicArn allow-list (fail closed:
-      an empty allow-list rejects everything), SignatureVersion 2 if present.
+      an empty allow-list rejects everything). The SNS signature itself is not verified here: trust comes
+      from the queue policy (only the pinned topic may send) plus the TopicArn allow-list. AWS creates
+      topics with SignatureVersion 1 by default, so 1 and 2 are both accepted; anything else is refused.
     - Raw delivery: body is already the event; accepted only when raw delivery is configured
       and the queue policy already pins the topic (no TopicArn to check).
     """
@@ -81,7 +83,7 @@ def unwrap(body, expected_topics):
         arn = outer.get("TopicArn", "")
         if not expected_topics or arn not in expected_topics:
             raise UnexpectedTopic(f"topic {arn!r} not allowed")
-        if outer.get("SignatureVersion") not in (None, "2"):
+        if outer.get("SignatureVersion") not in (None, "1", "2"):
             raise ParseError("unsupported SNS SignatureVersion")
         try:
             return json.loads(outer["Message"])
