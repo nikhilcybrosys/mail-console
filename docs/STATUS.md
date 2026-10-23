@@ -25,9 +25,15 @@ never run for real.
 - **Exports and saved views (verified in a real browser):** CSV export of sent mail and the suppression list (capability, fresh
   passkey, audit row, row cap, formula-injection defence), private saved views.
 - **Prometheus `/metrics` (verified with the official parser):** off unless a token is set; aggregate numbers only.
-- **Compose (opt-in):** one-off mail from addresses you list, through a separate AWS role that can only call `SendEmail`.
-  Role assumption is verified against real AWS (positive and negative cases). **The actual `SendEmail` call has not yet been
-  made against real SES**: it is tested with a stand-in, and the IAM policy with the policy simulator.
+- **Compose (opt-in, verified):** one-off mail from addresses you list, through a separate AWS role that can only call
+  `SendEmail`, with shared templates and per-address daily limits that hold under concurrent sends. Verified against real AWS:
+  role assumption (positive and negative cases) and a real send, which SES accepted and whose `send` and `delivery` events came
+  back into the sent-mail log tagged as Compose.
+- **People, cost and DMARC (tested; verified in a real browser):** adding people from the console (passkey, audited), an
+  estimated SES cost per app (a floor, not a bill), and DMARC report upload with a per-domain viewer that says whether it
+  looks safe to tighten the policy (uploads are validated strictly and labelled unverified).
+- **Domain scope (tested):** narrows what a limited person sees (messages, DNS, alerts, suppression list, overview tables). It is
+  not a tenant boundary; the README lists what it does not cover.
 - **Inbound (tested):** HTML sanitizer, secret redaction, a cookie-less renderer on a separate origin, a DMARC report parser,
   attachment downloads gated on a clean malware scan. The code that fills the inbox from a Mail Manager archive is **not
   built**, so the inbox is empty until it exists.
@@ -42,7 +48,7 @@ never run for real.
 - Write actions through the approval flow (suppression changes, identity and event-destination changes) have been tested and
   the roles proven assumable, but a real change through them has **not yet been made** on a real account.
 - Mail Manager archive sync and an inbox fed by it; reply threading. Customer replies are best handled where the tickets live.
-- Bulk suppression imports, template editing, break-glass access.
+- Bulk suppression imports, break-glass access.
 - Event table is not partitioned (fine for tens of millions of rows; see `docs/DEVIATIONS.md`).
 - No off-site backup helper in the repo (the nightly dump script is deployment-specific).
 - CI (GitHub Actions) runs tests on PostgreSQL 16 (including the AWS policy tests), Django deployment checks, a migrations
