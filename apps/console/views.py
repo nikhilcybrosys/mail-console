@@ -23,7 +23,7 @@ from apps.approvals.models import ApprovalRequest
 from apps.audit.models import AuditLog
 from apps.audit.service import record, verify_chain
 from apps.core.rbac import ROLES, has_capability, require_capability
-from apps.core.scope import scoped_identities
+from apps.core.scope import scoped_alerts, scoped_identities, scoped_suppression, scoped_suppression_changes
 from apps.core.templatetags.ui import STATES
 from apps.sesdata import channels, metrics, setupcheck, sync
 from apps.sesdata.events import SUPPRESSION_SUBTYPES  # noqa: F401  (re-exported for templates/tests)
@@ -112,7 +112,7 @@ def dashboard(request):
     for r in reasons:
         r["fill"] = round(r["count"] / top * 100, 1)
     attention = []
-    for a in Alert.objects.filter(resolved_at__isnull=True).order_by("-opened_at")[:4]:
+    for a in scoped_alerts(request.user, Alert.objects.filter(resolved_at__isnull=True)).order_by("-opened_at")[:4]:
         attention.append({"tone": "err" if a.severity == "page" else "warn", "icon": "triangle-alert", "text": a.title, "url": reverse("alerts"), "cta": "Review"})
     if has_capability(request.user, "approve"):
         n = ApprovalRequest.objects.filter(state=ApprovalRequest.PENDING).count()
@@ -261,7 +261,7 @@ def messages_export(request):
 @require_capability("export_data", step_up=True)
 def suppression_export(request):
     q = (request.GET.get("q") or "").strip()
-    qs = SuppressionEntry.objects.filter(region=_region(request))
+    qs = scoped_suppression(request.user, SuppressionEntry.objects.filter(region=_region(request)))
     if q:
         qs = qs.filter(address_lower__startswith=q.lower())
     n = qs.count()
@@ -366,15 +366,14 @@ def message_body(request, pk):
 def suppression(request):
     q = (request.GET.get("q") or "").strip()
     region = _region(request)
-    qs = SuppressionEntry.objects.filter(region=region)
-    if q:
-        qs = qs.filter(address_lower__startswith=q.lower())
+    base = scoped_suppression(request.user, SuppressionEntry.objects.filter(region=region))
+    qs = base.filter(address_lower__startswith=q.lower()) if q else base
     page = _page(request, qs.order_by("-last_update_time"))
-    changes = SuppressionChange.objects.filter(region=region)
+    changes = scoped_suppression_changes(request.user, SuppressionChange.objects.filter(region=region))
     if q:
         changes = changes.filter(address__istartswith=q)
     return render(request, "console/suppression.html", {
-        "page": page, "q": q, "changes": changes.order_by("-at")[:20], "total": SuppressionEntry.objects.filter(region=region).count(),
+        "page": page, "q": q, "changes": changes.order_by("-at")[:20], "total": base.count(),
         "can_remove": has_capability(request.user, "suppression_remove_single"),
         "can_bulk": has_capability(request.user, "suppression_bulk"),
         "can_export": has_capability(request.user, "export_data"),
@@ -387,6 +386,13 @@ def suppression_remove(request):
     raw = request.POST.get("addresses", "")
     addresses = list(dict.fromkeys(a.strip() for a in re.split(r"[\s,;]+", raw) if a.strip()))  # exact case preserved
     region = _region(request)
+    if request.user.scope_domains and addresses:  # a scoped person can only act on addresses they can see
+        visible = set(scoped_suppression(request.user, SuppressionEntry.objects.filter(region=region, address_lower__in=[a.lower() for a in addresses]))
+                      .values_list("address_lower", flat=True))
+        outside = [a for a in addresses if a.lower() not in visible]
+        if outside:
+            messages.error(request, f"Not on your list: {', '.join(outside[:3])}" + (" and more" if len(outside) > 3 else "") + ".")
+            return redirect("suppression")
     try:
         req = approvals.request_action(request.user, "suppression.remove", {"addresses": addresses}, region, request.POST.get("reason", ""), request=request)
     except approvals.ApprovalError as exc:
@@ -450,8 +456,8 @@ def _alert_rules():
 def _alerts_context(request, test_results=None):
     chans = channels.configured()
     return {
-        "open": Alert.objects.filter(resolved_at__isnull=True).order_by("-opened_at"),
-        "recent": Alert.objects.filter(resolved_at__isnull=False).order_by("-resolved_at")[:20],
+        "open": scoped_alerts(request.user, Alert.objects.filter(resolved_at__isnull=True)).order_by("-opened_at"),
+        "recent": scoped_alerts(request.user, Alert.objects.filter(resolved_at__isnull=False)).order_by("-resolved_at")[:20],
         "channels": [channels.LABELS[c] for c in chans], "rules": _alert_rules(), "notify_resolved": settings.ALERT_NOTIFY_RESOLVED,
         "quiet_now": channels.in_quiet_hours(), "can_test_channels": bool(chans) and has_capability(request.user, "test_alert_channels"),
         "test_results": test_results}

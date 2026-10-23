@@ -14,7 +14,8 @@ def _nav(request, u):
         m = {url_name, *match}
         return {"url": reverse(url_name), "label": label, "icon": icon, "active": name in m, "count": count}
 
-    open_alerts = Alert.objects.filter(resolved_at__isnull=True).count()
+    from .scope import scoped_alerts
+    open_alerts = scoped_alerts(u, Alert.objects.filter(resolved_at__isnull=True)).count()
     groups = [{"label": "Monitor", "items": [
         item("dashboard", "Overview", "layout-dashboard"),
         item("messages", "Sent mail", "mail", ("message_detail",)),
