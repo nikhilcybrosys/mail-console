@@ -16,6 +16,7 @@ from django.utils.cache import patch_vary_headers
 from urllib.parse import urlencode
 from django.views.decorators.http import require_POST
 
+from apps.accounts import provisioning
 from apps.accounts.models import SavedView, User
 from apps.approvals import service as approvals
 from apps.approvals.models import ApprovalRequest
@@ -535,6 +536,27 @@ def setup_test_write_roles(request):
 @require_capability("manage_users")
 def users_view(request):
     return render(request, "console/users.html", {"users": User.objects.order_by("email"), "roles": ROLES})
+
+
+@require_capability("manage_users")
+def user_add(request):
+    """Add a person who will sign in through the identity provider. Passkey-gated and audited. Nothing is e-mailed (the
+    console never sends mail on its own): tell them to sign in, because the first sign-in binds their provider account."""
+    if request.method != "POST":
+        return redirect("users")
+    if not request.user.has_fresh_step_up(request.session):
+        return redirect(f"{reverse('step_up')}?{urlencode({'next': reverse('users')})}")
+    p = request.POST
+    data, errors = provisioning.check_new_user(p.get("email"), p.get("role"), p.get("name"), p.get("scope"))
+    if errors:
+        return render(request, "console/users.html", {"users": User.objects.order_by("email"), "roles": ROLES, "add_errors": errors,
+                                                         "add_values": {"email": p.get("email", ""), "name": p.get("name", ""), "scope": p.get("scope", ""), "role": p.get("role", "")}})
+    u = User(email=data["email"], role=data["role"], name=data["name"], scope_domains=data["scope"])
+    u.set_unusable_password()
+    u.save()
+    record("user.created", request=request, target=u.email, details={"role": u.role, "scope": u.scope_domains})
+    messages.success(request, f"Added {u.email} as {u.role.replace('_', ' ')}. Ask them to sign in soon: their first sign-in links their account.")
+    return redirect("users")
 
 
 @require_POST

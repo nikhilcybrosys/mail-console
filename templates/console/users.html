@@ -2,7 +2,7 @@
 {% block title %}{% trans "Users and roles" %}{% endblock %}
 {% block crumbs %}<span aria-current="page">{% trans "Users and roles" %}</span>{% endblock %}
 {% block content %}
-<div class="ph"><div><h1>{% trans "Users and roles" %}</h1><p>{% trans "Sign-in is through your identity provider. New people are added with the create_console_user command, then given a role here." %}</p></div></div>
+<div class="ph"><div><h1>{% trans "Users and roles" %}</h1><p>{% trans "Sign-in is through your identity provider. Add a person below, then change their role here. Nothing is e-mailed: ask them to sign in soon, because their first sign-in links their account." %}</p></div></div>
 <div class="grid-main">
 <div class="table-wrap">
 <table class="table"><thead><tr><th>{% trans "Person" %}</th><th>{% trans "Role" %}</th><th>{% trans "Status" %}</th><th>{% trans "Last sign-in" %}</th><th><span class="sr-only">{% trans "Save" %}</span></th></tr></thead><tbody>
@@ -13,6 +13,16 @@
   <td class="muted">{% if u.last_login %}{% ago u.last_login %}{% else %}{% trans "Never" %}{% endif %}</td>
   <td class="col-actions"><form id="uf-{{ u.pk }}" method="post" action="{% url 'user_update' u.pk %}">{% csrf_token %}<button class="btn btn-sm">{% trans "Save" %}</button></form></td>
 </tr>{% endfor %}</tbody></table></div>
+<section class="card" aria-labelledby="add-h"><div class="card-head"><div class="card-title" id="add-h">{% trans "Add a person" %}</div></div>
+  <form class="card-body stack" method="post" action="{% url 'user_add' %}">{% csrf_token %}
+    {% if add_errors %}<div class="callout callout-err" role="alert">{% icon "circle-alert" %}<div><ul>{% for e in add_errors %}<li>{{ e }}</li>{% endfor %}</ul></div></div>{% endif %}
+    <div class="field"><label class="label" for="a-email">{% trans "E-mail" %}</label><input class="input" id="a-email" name="email" type="email" maxlength="254" required value="{{ add_values.email }}" autocomplete="off"></div>
+    <div class="field"><label class="label" for="a-role">{% trans "Role" %}</label><select class="select" id="a-role" name="role">{% for r in roles %}<option value="{{ r }}" {% if add_values.role == r or not add_values.role and r == "viewer" %}selected{% endif %}>{{ r|cut:"_"|title }}</option>{% endfor %}</select></div>
+    <div class="field"><label class="label" for="a-name">{% trans "Name" %} <span class="muted">({% trans "optional" %})</span></label><input class="input" id="a-name" name="name" maxlength="100" value="{{ add_values.name }}" autocomplete="off"></div>
+    <div class="field"><label class="label" for="a-scope">{% trans "Only these From-domains" %} <span class="muted">({% trans "optional" %})</span></label><input class="input" id="a-scope" name="scope" value="{{ add_values.scope }}" placeholder="example.com, example.org" autocomplete="off"><span class="help">{% trans "Leave empty for all. A limited person sees only mail from these domains." %}</span></div>
+    <div><button class="btn btn-primary" type="submit">{% trans "Add person" %}</button></div>
+    <p class="help">{% trans "Needs your passkey and is recorded in the audit log." %}</p>
+  </form></section>
 <section class="card" aria-labelledby="roles-h"><div class="card-head"><div class="card-title" id="roles-h">{% trans "What each role can do" %}</div></div>
 <dl class="card-body kv kv-narrow">
   <dt>{% trans "Viewer" %}</dt><dd>{% trans "Sees delivery data and health. No message bodies." %}</dd>
