@@ -6,13 +6,16 @@ from django.conf import settings
 from django.core.paginator import Paginator
 from django.db.models import Sum
 from django.http import Http404, HttpResponseBadRequest, HttpResponseRedirect
-from django.shortcuts import get_object_or_404, render
+from django.contrib import messages
+from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
 from apps.audit.service import record
-from apps.core.rbac import require_capability
+from apps.core.rbac import has_capability, require_capability
 from apps.sesdata.models import BodyAccessLog
 
+from . import dmarc_upload as dmarc_upload_mod
+from . import dmarcstats
 from .models import DmarcReport, InboundAttachment, InboundMessage
 from .tokens import issue
 
@@ -66,10 +69,36 @@ def attachment_download(request, pk, index):
 
 @require_capability("view_inbound")
 def dmarc_dashboard(request):
-    rows = DmarcReport.objects.values("domain", "policy").annotate(ok=Sum("pass_count"), bad=Sum("fail_count")).order_by("domain")
-    failing = []
-    for r in DmarcReport.objects.order_by("-end")[:200]:
-        for row in r.rows:
-            if row["dkim"] != "pass" and row["spf"] != "pass":
-                failing.append({"domain": r.domain, "org": r.org_name, **row})
-    return render(request, "inbound/dmarc.html", {"summary": rows, "failing": failing[:50]})
+    try:
+        days = int(request.GET.get("days", 30))
+    except ValueError:
+        days = 30
+    days = days if days in dmarcstats.PERIODS else 30
+    domains = dmarcstats.overview(days)
+    chosen = request.GET.get("domain", "")
+    current = next((d for d in domains if d["domain"] == chosen), domains[0] if domains else None)
+    src, more = dmarcstats.sources(current["domain"], days) if current else ([], 0)
+    return render(request, "inbound/dmarc.html", {
+        "days": days, "periods": dmarcstats.PERIODS, "domains": domains, "current": current, "sources": src, "more_sources": more,
+        "reports": dmarcstats.recent_reports(current["domain"] if current else None, days=days),
+        "can_upload": has_capability(request.user, "dmarc_upload")})
+
+
+@require_capability("dmarc_upload")
+def dmarc_upload(request):
+    """Add reports by hand: download the attachments from your rua mailbox and drop them here. Audited; nothing raw is kept."""
+    results = []
+    if request.method == "POST":
+        files = request.FILES.getlist("reports")
+        if not files:
+            messages.error(request, "Choose at least one report file.")
+            return redirect("dmarc_upload")
+        if len(files) > dmarc_upload_mod.MAX_FILES:
+            messages.error(request, f"At most {dmarc_upload_mod.MAX_FILES} files at a time.")
+            return redirect("dmarc_upload")
+        results = dmarc_upload_mod.ingest(files, request.user.email)
+        count = lambda st: sum(r.status == st for r in results)  # noqa: E731
+        record("dmarc.uploaded", request=request, details={"files": len(results), "added": count("added"), "duplicates": count("duplicate"),
+                                                          "errors": count("error"), "domains": sorted({r.domain for r in results if r.domain})})
+    return render(request, "inbound/dmarc_upload.html", {"results": results, "watched": sorted(dmarc_upload_mod.watched_domains()),
+                                                         "max_files": dmarc_upload_mod.MAX_FILES, "max_mb": dmarc_upload_mod.MAX_FILE_BYTES // 1024 // 1024})

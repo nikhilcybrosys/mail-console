@@ -2,15 +2,32 @@
 {% block title %}{% trans "DMARC reports" %}{% endblock %}
 {% block crumbs %}<a href="{% url 'inbox' %}">{% trans "Inbox" %}</a><span class="sep">/</span><span aria-current="page">{% trans "DMARC reports" %}</span>{% endblock %}
 {% block content %}
-<div class="ph"><div><h1>{% trans "DMARC reports" %}</h1><p>{% trans "Aggregate reports from mailbox providers show who is sending mail as your domain. Tighten your policy only once legitimate senders pass." %}</p></div></div>
+<div class="ph"><div><h1>{% trans "DMARC reports" %}</h1><p>{% trans "Mailbox providers send daily reports of who is sending mail as your domain. Tighten your policy only once every legitimate sender passes." %}</p></div>
+  <span class="btn-group">{% for p in periods %}<a class="btn btn-sm {% if p == days %}btn-primary{% endif %}" href="?days={{ p }}{% if current %}&amp;domain={{ current.domain|urlencode }}{% endif %}">{{ p }}d</a>{% endfor %}
+  {% if can_upload %}<a class="btn" href="{% url 'dmarc_upload' %}">{% icon "plus" %}<span>{% trans "Upload reports" %}</span></a>{% endif %}</span></div>
 <div class="stack">
-<section class="card" aria-labelledby="dm-h"><div class="card-head"><div class="card-title" id="dm-h">{% trans "By domain" %}</div></div>
-{% if summary %}<div class="table-wrap table-flush"><table class="table"><thead><tr><th>{% trans "Domain" %}</th><th>{% trans "Policy" %}</th><th class="col-num">{% trans "Passing" %}</th><th class="col-num">{% trans "Failing" %}</th></tr></thead><tbody>
-{% for r in summary %}<tr><td class="mono cell-primary">{{ r.domain }}</td><td>{% if r.policy == "none" %}<span class="badge badge-warn">{% trans "none: monitoring only" %}</span>{% else %}<span class="badge badge-ok">{{ r.policy }}</span>{% endif %}</td><td class="col-num num">{{ r.ok }}</td><td class="col-num num">{% if r.bad %}<span class="badge badge-err badge-plain">{{ r.bad }}</span>{% else %}0{% endif %}</td></tr>{% endfor %}</tbody></table></div>
-{% else %}{% include "components/_empty.html" with icon="shield-check" title=_("No DMARC reports yet") text=_("Add rua=mailto:… on your inbound address to your DMARC record. Reports arrive within a day or two.") %}{% endif %}</section>
-<section class="card" aria-labelledby="fs-h"><div class="card-head"><div class="card-title" id="fs-h">{% trans "Sources failing DMARC" %}</div></div>
-{% if failing %}<div class="table-wrap table-flush"><table class="table"><thead><tr><th>{% trans "Source IP" %}</th><th>{% trans "Domain" %}</th><th class="col-num">{% trans "Messages" %}</th><th>{% trans "Reported by" %}</th><th>{% trans "DKIM" %}</th><th>SPF</th></tr></thead><tbody>
-{% for f in failing %}<tr><td class="mono">{{ f.source_ip }}</td><td>{{ f.domain }}</td><td class="col-num num">{{ f.count }}</td><td class="muted">{{ f.org }}</td><td><span class="badge badge-err badge-plain">{{ f.dkim }}</span></td><td><span class="badge badge-err badge-plain">{{ f.spf }}</span></td></tr>{% endfor %}</tbody></table></div>
-{% else %}<div class="card-body muted">{% trans "No failing sources reported." %}</div>{% endif %}</section>
+{% if not domains %}
+  <section class="card">{% include "components/_empty.html" with icon="shield-check" title=_("No DMARC reports in this period") text=_("Reports go to the address in your DMARC record (rua=mailto:…). Download the attachments from that mailbox and upload them here.") %}</section>
+{% else %}
+  <section class="card" aria-labelledby="dm-h"><div class="card-head"><div class="card-title" id="dm-h">{% trans "By domain" %}</div></div>
+  <div class="table-wrap table-flush"><table class="table"><thead><tr><th>{% trans "Domain" %}</th><th>{% trans "Policy" %}</th><th class="col-num">{% trans "Messages" %}</th><th class="col-num">{% trans "Passing" %}</th><th class="col-num">{% trans "Days covered" %}</th><th>{% trans "Verdict" %}</th></tr></thead><tbody>
+  {% for d in domains %}<tr {% if current.domain == d.domain %}class="is-active"{% endif %}>
+    <td class="mono cell-primary"><a href="?days={{ days }}&amp;domain={{ d.domain|urlencode }}">{{ d.domain }}</a></td>
+    <td>{% if d.policy == "none" or not d.policy %}<span class="badge badge-warn">{% trans "none: monitoring only" %}</span>{% else %}<span class="badge badge-ok">{{ d.policy }}</span>{% endif %}</td>
+    <td class="col-num num">{{ d.total }}</td><td class="col-num num">{{ d.pass_rate|pct:1 }}</td><td class="col-num num">{{ d.days }}</td>
+    <td>{% if d.state == "ready" %}<span class="badge badge-ok">{% trans "Looks ready to tighten" %}</span>{% elif d.state == "enforcing" %}<span class="badge badge-info">{% trans "Enforcing" %}</span>{% elif d.state == "not_ready" %}<span class="badge badge-err">{% trans "Not ready" %}</span>{% else %}<span class="badge badge-plain">{% trans "Need more data" %}</span>{% endif %}</td></tr>{% endfor %}</tbody></table></div></section>
+  {% if current %}
+  <div class="callout {% if current.state == 'ready' %}callout-info{% elif current.state == 'not_ready' %}callout-err{% else %}callout-warn{% endif %}" role="status">{% icon "shield-check" %}<div><div class="callout-title">{{ current.domain }}</div><p>{{ current.advice }}</p></div></div>
+  <section class="card" aria-labelledby="src-h"><div class="card-head"><div class="card-title" id="src-h">{% blocktrans with d=current.domain %}Who is sending as {{ d }}{% endblocktrans %}</div></div>
+  <div class="table-wrap table-flush"><table class="table"><thead><tr><th>{% trans "Source IP" %}</th><th>{% trans "From domain" %}</th><th class="col-num">{% trans "Messages" %}</th><th class="col-num">{% trans "Failing" %}</th><th class="col-num">DKIM</th><th class="col-num">SPF</th><th>{% trans "Receivers did" %}</th></tr></thead><tbody>
+  {% for s in sources %}<tr><td class="mono">{{ s.ip }}</td><td class="muted">{{ s.header_from|default:"-" }}</td><td class="col-num num">{{ s.count }}</td>
+    <td class="col-num num">{% if s.failed %}<span class="badge badge-err badge-plain">{{ s.failed }}</span>{% else %}0{% endif %}</td><td class="col-num num">{{ s.dkim_pass }}</td><td class="col-num num">{{ s.spf_pass }}</td><td class="muted">{{ s.dispositions|join:", "|default:"-" }}</td></tr>{% endfor %}</tbody></table></div>
+  {% if more_sources %}<div class="card-body muted">{% blocktrans with n=more_sources %}and {{ n }} more sources{% endblocktrans %}</div>{% endif %}</section>
+  <section class="card" aria-labelledby="rp-h"><div class="card-head"><div class="card-title" id="rp-h">{% trans "Recent reports" %}</div></div>
+  <div class="table-wrap table-flush"><table class="table"><thead><tr><th>{% trans "Reported by" %}</th><th>{% trans "Covers" %}</th><th class="col-num">{% trans "Messages" %}</th><th>{% trans "Added" %}</th></tr></thead><tbody>
+  {% for r in reports %}<tr><td class="cell-primary">{{ r.org_name }}</td><td class="muted">{{ r.begin|date:"j M" }} to {{ r.end|date:"j M Y" }}</td><td class="col-num num">{{ r.pass_count|add:r.fail_count }}</td>
+    <td class="muted">{% if r.source == "upload" %}<span class="badge badge-warn">{% trans "uploaded, not verified" %}</span> <span class="muted">{% trans "by" %} {{ r.uploaded_by }}</span>{% else %}{% trans "from the inbox" %}{% endif %}</td></tr>{% endfor %}</tbody></table></div></section>
+  {% endif %}
+{% endif %}
 </div>
 {% endblock %}

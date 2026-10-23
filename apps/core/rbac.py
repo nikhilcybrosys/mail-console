@@ -31,6 +31,7 @@ CAPABILITIES = {
     "export_data": {SUPPORT, DELIVERABILITY_ADMIN, SECURITY_ADMIN},
     "compose_send": {DELIVERABILITY_ADMIN, SECURITY_ADMIN},
     "manage_senders": {SECURITY_ADMIN},
+    "dmarc_upload": {DELIVERABILITY_ADMIN, SECURITY_ADMIN},
     "manage_templates": {SECURITY_ADMIN},
     "manage_users": {SECURITY_ADMIN},
     "approve": {DELIVERABILITY_ADMIN, SECURITY_ADMIN},
