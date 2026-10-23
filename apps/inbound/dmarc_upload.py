@@ -94,10 +94,11 @@ def clean_report(parsed, now=None):
             "rows": rows, "pass_count": ok, "fail_count": bad}
 
 
-def store_report(raw, name, *, source, allowed, now, uploader=""):
+def store_report(raw, name, *, source, allowed, now, uploader="", sender_domain=""):
     """Validate one report file's bytes and store it. Returns a Result; never raises for bad input.
 
-    `source` is "upload" (added by hand, unverified) or "inbox" (received by mail that passed the sender checks).
+    `source` is "upload" (added by hand), "inbox" (mail from a sender on the operator's list of reporting providers) or "mail"
+    (mail from some other sender that passed SES's DMARC check); the last two carry the authenticated `sender_domain`.
     """
     try:
         cleaned = clean_report(dmarc.parse(dmarc.unpack(raw, name)), now)
@@ -113,7 +114,7 @@ def store_report(raw, name, *, source, allowed, now, uploader=""):
     extra = {"uploaded_by": uploader, "uploaded_at": now} if source == "upload" else {}
     try:
         with transaction.atomic():
-            DmarcReport.objects.create(source=source, file_sha256=hashlib.sha256(raw).hexdigest(), **extra, **cleaned)
+            DmarcReport.objects.create(source=source, sender_domain=sender_domain, file_sha256=hashlib.sha256(raw).hexdigest(), **extra, **cleaned)
     except IntegrityError:
         return Result(name, "duplicate", "already added", cleaned["domain"])
     return Result(name, "added", f"{cleaned['pass_count'] + cleaned['fail_count']} messages from {cleaned['org_name']}", cleaned["domain"])

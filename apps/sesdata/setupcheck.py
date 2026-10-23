@@ -332,6 +332,12 @@ def _dmarc_checks(now, sqs_client):
                              "Attach a dead-letter queue with a redrive policy (aws/README.md, DMARC reports by mail)."))
         if not (attrs.get("SqsManagedSseEnabled") == "true" or attrs.get("KmsMasterKeyId")):
             out.append(Check(g, "dsse", "DMARC queue is not encrypted", WARN, "", "Enable server-side encryption on the queue."))
+    if settings.DMARC_SENDER_DOMAINS:
+        out.append(Check(g, "dsenders", "Reporting providers are listed", OK, "Verified: " + ", ".join(settings.DMARC_SENDER_DOMAINS) + ". Other senders are counted as unverified."))
+    else:
+        out.append(Check(g, "dsenders", "No reporting providers are listed", WARN,
+                         "Every report that arrives by mail is counted as unverified, because SES can only prove who sent the mail, not that the sender is a real provider.",
+                         "Once reports have arrived, list the providers you recognise in MC_DMARC_SENDER_DOMAINS (the DMARC page shows the senders)."))
     last = DmarcMail.objects.exclude(outcome="refused").order_by("-received_at").values_list("received_at", flat=True).first()
     if last is None:
         out.append(Check(g, "darrived", "No DMARC report has arrived by mail yet", WARN if not DmarcMail.objects.exists() else INFO,

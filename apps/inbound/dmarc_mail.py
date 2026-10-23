@@ -11,6 +11,16 @@ Anyone on the internet can send mail to that address, so nothing here is trusted
 * size limits apply before anything is parsed (object size, number of parts, number and size of attachments);
 * attachments then go through the same strict validation as a manual upload (`dmarc_upload.store_report`).
 
+A passing DMARC check proves who SENT the mail, not that the sender is a genuine reporting provider. So the sender's domain is
+stored with every report (it is part of the uniqueness key: another sender cannot take a genuine report's slot), reports from
+senders on the operator's list (MC_DMARC_SENDER_DOMAINS) are "inbox" (verified) and reports from any other authenticated
+sender are "mail" (stored, counted, labelled unverified like uploads).
+
+Daily allowances are kept in separate pools so strangers cannot use up the allowance of the providers you list: mail that failed
+the notification checks (nothing in it is trusted, not even its From), listed senders, other authenticated senders, and each
+sender on its own. An exhausted allowance raises OverLimit: the message is NOT deleted, it stays on the queue and ends in the
+dead-letter queue, where it can still be recovered.
+
 Mail that fails a check is not an error: it is recorded with a plain reason and dropped. A genuine fault (S3 or the database
 unavailable) raises, so the message stays on the queue and is retried, then lands in the dead-letter queue.
 """
@@ -22,6 +32,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
 from django.conf import settings
+from django.db.models import Q
 from django.utils import timezone as djtz
 
 from apps.sesdata.events import ParseError, unwrap
@@ -34,9 +45,14 @@ MAX_OBJECT_BYTES = 5 * 1024 * 1024   # the whole raw mail; real reports are a fe
 MAX_PARTS = 10
 MAX_ATTACHMENTS = 3
 KEEP_DAYS = 90
+UNAUTHENTICATED_MAX_PER_DAY = 500   # log lines for mail that failed the notification checks (cheap: nothing is fetched or parsed)
 _KEY_TAIL = re.compile(r"[A-Za-z0-9._-]{1,200}")
 _ID = re.compile(r"[A-Za-z0-9._=+-]{1,200}")
 _ADDR = re.compile(r"[A-Za-z0-9._%+-]{1,64}@([A-Za-z0-9-]+\.)+[A-Za-z]{2,63}")
+
+
+class OverLimit(Exception):
+    """A daily allowance is used up. Not a refusal: the message is kept (queue, then dead-letter queue), never silently deleted."""
 
 
 class Refused(Exception):
@@ -148,39 +164,81 @@ def attachments(raw):
     return out
 
 
-def _record(n, outcome, reason="", reports=0):
+def _record(n, outcome, reason="", reports=0, sender_domain=""):
     row, _ = DmarcMail.objects.get_or_create(
         ses_message_id=n.ses_message_id,
-        defaults={"received_at": n.received_at, "from_addr": n.from_addr, "outcome": outcome, "reason": reason[:300], "reports": reports})
+        defaults={"received_at": n.received_at, "from_addr": n.from_addr, "outcome": outcome, "reason": reason[:300], "reports": reports,
+                  "sender_domain": sender_domain})
     return row
 
 
-def _over_the_limit(now):
-    return DmarcMail.objects.filter(created_at__gte=now - timedelta(days=1)).count() >= settings.DMARC_MAX_PER_DAY
+def _domain(addr):
+    return addr.rsplit("@", 1)[-1].lower() if "@" in addr else ""
 
 
-def process(n, fetch, *, now=None, allowed=None, address=None, bucket=None, prefix=None):
+def is_listed(domain, senders):
+    """Is this sender domain (or a subdomain of it) one of the operator's reporting providers?"""
+    return bool(domain) and any(domain == d or domain.endswith("." + d) for d in senders)
+
+
+def _listed_q(senders):
+    q = Q(pk__in=[])
+    for d in senders:
+        q |= Q(sender_domain=d) | Q(sender_domain__endswith="." + d)
+    return q
+
+
+def _rows(now):
+    return DmarcMail.objects.filter(created_at__gte=now - timedelta(days=1)).exclude(ses_message_id__startswith="limit-")
+
+
+def _over(now, pool, text):
+    """Say once per day, in the log, that an allowance is used up (a flood cannot grow the table), then keep the message."""
+    DmarcMail.objects.get_or_create(ses_message_id=f"limit-{now:%Y-%m-%d}-{pool}", defaults={"received_at": now, "outcome": "refused", "reason": text[:300]})
+    raise OverLimit(text)
+
+
+def process(n, fetch, *, now=None, allowed=None, address=None, bucket=None, prefix=None, senders=None):
     """Handle one notice. `fetch(bucket, key)` returns the raw mail bytes (raising ObjectTooLarge / ObjectGone, or anything
-    else for a genuine fault). Returns the DmarcMail row. Safe to call again for the same message."""
+    else for a genuine fault). Returns the DmarcMail row. Safe to call again for the same message. Raises OverLimit when a
+    daily allowance is used up (the caller keeps the message)."""
     now = now or djtz.now()
     address = settings.DMARC_ADDRESS if address is None else address
     bucket = settings.DMARC_BUCKET if bucket is None else bucket
     prefix = settings.DMARC_KEY_PREFIX if prefix is None else prefix
+    senders = settings.DMARC_SENDER_DOMAINS if senders is None else senders
     done = DmarcMail.objects.filter(ses_message_id=n.ses_message_id).first()
     if done:
         return done
-    if _over_the_limit(now):
-        # One line per day says it happened; further mail that day is dropped without a row, so a flood cannot fill the table.
-        return _record(Notice(f"limit-{now:%Y-%m-%d}", now, "", [], {}, "", ""), "refused",
-                       f"daily limit of {settings.DMARC_MAX_PER_DAY} mails reached; mail after that point is dropped without being logged")
+    # 1. What the notification alone can tell us. Until SES's DMARC check has passed, the From address is unauthenticated: it
+    #    could name anyone, so it is not recorded as a sender and cannot count against anyone's allowance.
     try:
         check_notice(n, address=address, bucket=bucket, prefix=prefix)
+    except Refused as why:
+        if _rows(now).filter(sender_domain="").count() >= UNAUTHENTICATED_MAX_PER_DAY:
+            _over(now, "unauthenticated", f"{UNAUTHENTICATED_MAX_PER_DAY} mails a day that failed the checks were logged; the rest are kept on the queue")
+        return _record(n, "refused", str(why))
+    # 2. Authenticated sender: allowances, per pool and per sender.
+    domain = _domain(n.from_addr)
+    if not domain:
+        return _record(n, "refused", "the message has no sender address")
+    trusted = is_listed(domain, senders)
+    pool = _rows(now).exclude(sender_domain="")
+    if trusted and pool.filter(_listed_q(senders)).count() >= settings.DMARC_MAX_PER_DAY:
+        _over(now, "listed", f"the daily allowance of {settings.DMARC_MAX_PER_DAY} mails from your listed providers is used up")
+    if not trusted and pool.exclude(_listed_q(senders)).count() >= settings.DMARC_UNLISTED_MAX_PER_DAY:
+        _over(now, "unlisted", f"the daily allowance of {settings.DMARC_UNLISTED_MAX_PER_DAY} mails from senders that are not on your list is used up")
+    if pool.filter(sender_domain=domain).count() >= settings.DMARC_MAX_PER_SENDER:
+        _over(now, "sender-" + re.sub(r"[^a-z0-9.-]", "", domain)[:60], f"{domain} has used its daily allowance of {settings.DMARC_MAX_PER_SENDER} mails")
+    # 3. The message itself.
+    try:
         raw = fetch(n.bucket, n.key)
         files = attachments(raw)
     except Refused as why:
-        return _record(n, "refused", str(why))
+        return _record(n, "refused", str(why), sender_domain=domain)
     allowed = dmarc_upload.watched_domains() if allowed is None else allowed
-    results = [dmarc_upload.store_report(data, name, source="inbox", allowed=allowed, now=now) for name, data in files]
+    source = "inbox" if trusted else "mail"
+    results = [dmarc_upload.store_report(data, name, source=source, allowed=allowed, now=now, sender_domain=domain) for name, data in files]
     added = sum(r.status == "added" for r in results)
     if added:
         outcome, reason = "accepted", ""
@@ -188,7 +246,7 @@ def process(n, fetch, *, now=None, allowed=None, address=None, bucket=None, pref
         outcome, reason = "duplicate", ""
     else:
         outcome, reason = "refused", next((r.detail for r in results if r.status == "error"), "no report could be stored")
-    return _record(n, outcome, reason, added)
+    return _record(n, outcome, reason, added, sender_domain=domain)
 
 
 def s3_fetcher(s3):

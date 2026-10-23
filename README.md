@@ -27,7 +27,8 @@ toolchain.
   `p=none` to enforcement (needs at least a week of reports and 100 messages, and at most 2% failing). Uploads are validated
   strictly, kept as numbers only (with the file's fingerprint), and labelled unverified; a report that later arrives by mail
   replaces its uploaded copy in the counts. Mailed reports are only counted when SES's virus and DMARC checks of the sender
-  passed, within size limits and a daily cap; everything turned away is listed with its reason.
+  passed and within size limits; reports from providers you list are verified, any other sender's are labelled unverified;
+  daily allowances are kept per pool so strangers cannot crowd out your providers; everything turned away is listed with its reason.
 - **Tamper-evident audit log:** every sign-in, change and message-body view, hash-chained so edits show.
 
 <p align="center">

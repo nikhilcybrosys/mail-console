@@ -12,6 +12,7 @@
   <div class="card-body stack">
     <p class="muted">{% if collection.last %}{% blocktrans with t=collection.last|timesince %}Last report received {{ t }} ago.{% endblocktrans %}{% else %}{% trans "No report has arrived by mail yet." %}{% endif %}
       {% blocktrans with a=collection.accepted d=collection.duplicate r=collection.refused %}In the last 7 days: {{ a }} added, {{ d }} already known, {{ r }} turned away.{% endblocktrans %}</p>
+    {% if collection.unlisted_senders %}<p class="help">{% trans "Reports from senders that are not on your list, so they are counted but labelled unverified:" %} {% for d in collection.unlisted_senders %}<span class="mono">{{ d }}</span>{% if not forloop.last %}, {% endif %}{% endfor %}. {% trans "Add the ones you recognise to MC_DMARC_SENDER_DOMAINS." %}</p>{% endif %}
     {% if collection.refusals %}<div class="table-wrap table-flush"><table class="table"><thead><tr><th>{% trans "Received" %}</th><th>{% trans "From" %}</th><th>{% trans "Why it was turned away" %}</th></tr></thead><tbody>
     {% for m in collection.refusals %}<tr><td class="muted">{{ m.received_at|date:"j M H:i" }}</td><td class="mono">{{ m.from_addr|default:"-" }}</td><td>{{ m.reason }}</td></tr>{% endfor %}</tbody></table></div>{% endif %}
   </div></section>
@@ -36,7 +37,7 @@
   <section class="card" aria-labelledby="rp-h"><div class="card-head"><div class="card-title" id="rp-h">{% trans "Recent reports" %}</div></div>
   <div class="table-wrap table-flush"><table class="table"><thead><tr><th>{% trans "Reported by" %}</th><th>{% trans "Covers" %}</th><th class="col-num">{% trans "Messages" %}</th><th>{% trans "Added" %}</th></tr></thead><tbody>
   {% for r in reports %}<tr><td class="cell-primary">{{ r.org_name }}</td><td class="muted">{{ r.begin|date:"j M" }} to {{ r.end|date:"j M Y" }}</td><td class="col-num num">{{ r.pass_count|add:r.fail_count }}</td>
-    <td class="muted">{% if r.source == "upload" %}<span class="badge badge-warn">{% trans "uploaded, not verified" %}</span> <span class="muted">{% trans "by" %} {{ r.uploaded_by }}</span>{% else %}{% trans "received by mail" %}{% endif %}</td></tr>{% endfor %}</tbody></table></div></section>
+    <td class="muted">{% if r.source == "upload" %}<span class="badge badge-warn">{% trans "uploaded, not verified" %}</span> <span class="muted">{% trans "by" %} {{ r.uploaded_by }}</span>{% elif r.source == "mail" %}<span class="badge badge-warn">{% trans "sender not on your list" %}</span> <span class="muted">{{ r.sender_domain }}</span>{% else %}{% trans "received by mail from" %} {{ r.sender_domain|default:"-" }}{% endif %}</td></tr>{% endfor %}</tbody></table></div></section>
   {% endif %}
 {% endif %}
 </div>

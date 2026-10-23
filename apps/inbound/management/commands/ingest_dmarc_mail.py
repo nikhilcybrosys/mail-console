@@ -9,6 +9,7 @@ from django.core.management.base import BaseCommand, CommandError
 
 from apps.audit.service import record
 from apps.inbound import dmarc_mail
+from apps.inbound.dmarc_mail import OverLimit
 from apps.sesdata.events import IgnoredMessage, ParseError, UnexpectedTopic
 
 log = logging.getLogger(__name__)
@@ -51,6 +52,10 @@ class Command(BaseCommand):
             except UnexpectedTopic as exc:
                 # Anomalous: leave it so it lands in the dead-letter queue and raises the alarm.
                 record("dmarc.mail.rejected_topic", details={"message_id": m["MessageId"], "error": str(exc)[:200]})
+                continue
+            except OverLimit as exc:
+                # Kept on purpose: it retries, then lands in the dead-letter queue, from where it can be recovered.
+                log.warning("kept %s: %s", m["MessageId"], exc)
                 continue
             except IgnoredMessage as exc:
                 log.info("ignored control message %s: %s", m["MessageId"], exc)  # then deleted below

@@ -224,7 +224,15 @@ DMARC_TOPIC_ARNS = [a.strip() for a in env("MC_DMARC_TOPIC_ARNS", "").split(",")
 DMARC_ADDRESS = env("MC_DMARC_ADDRESS", "").strip().lower()      # the one address reports are sent to
 DMARC_BUCKET = env("MC_DMARC_BUCKET", "").strip()                # where SES stores the raw mail (never taken from a notification)
 DMARC_KEY_PREFIX = env("MC_DMARC_KEY_PREFIX", "dmarc/").strip()
-DMARC_MAX_PER_DAY = int(env_float("MC_DMARC_MAX_PER_DAY", 300))  # mails handled per rolling day; a flood beyond this is dropped
+# Reporting providers you trust (their From domains, comma separated, subdomains included). Reports from these are "verified";
+# reports from any other sender that SES's DMARC check authenticated are stored but labelled unverified, like uploads.
+DMARC_SENDER_DOMAINS = [d.strip().lower() for d in env("MC_DMARC_SENDER_DOMAINS", "").split(",") if d.strip()]
+# Daily allowances (rolling day) in separate pools, so mail from strangers can never use up the allowance of your providers:
+# listed providers, everyone else that passed the DMARC check, and per sender. Mail beyond an allowance is NOT deleted: it stays on
+# the queue and ends in the dead-letter queue.
+DMARC_MAX_PER_DAY = int(env_float("MC_DMARC_MAX_PER_DAY", 300))
+DMARC_UNLISTED_MAX_PER_DAY = int(env_float("MC_DMARC_UNLISTED_MAX_PER_DAY", 200))
+DMARC_MAX_PER_SENDER = int(env_float("MC_DMARC_MAX_PER_SENDER", 50))
 DMARC_ENABLED = bool(DMARC_QUEUE_URL)
 if DMARC_ENABLED:
     _dp = []
@@ -238,8 +246,10 @@ if DMARC_ENABLED:
         _dp.append("MC_DMARC_BUCKET must be an S3 bucket name")
     if not re.fullmatch(r"[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*/", DMARC_KEY_PREFIX) or ".." in DMARC_KEY_PREFIX:
         _dp.append("MC_DMARC_KEY_PREFIX must be a folder-style prefix ending in /, such as dmarc/")
-    if not 1 <= DMARC_MAX_PER_DAY <= 100_000:
-        _dp.append("MC_DMARC_MAX_PER_DAY must be between 1 and 100000")
+    if not all(1 <= v <= 100_000 for v in (DMARC_MAX_PER_DAY, DMARC_UNLISTED_MAX_PER_DAY, DMARC_MAX_PER_SENDER)):
+        _dp.append("MC_DMARC_MAX_PER_DAY, MC_DMARC_UNLISTED_MAX_PER_DAY and MC_DMARC_MAX_PER_SENDER must be between 1 and 100000")
+    if not all(re.fullmatch(r"([a-z0-9-]+\.)+[a-z]{2,63}", d) for d in DMARC_SENDER_DOMAINS):
+        _dp.append("MC_DMARC_SENDER_DOMAINS must list plain domain names, comma separated")
     if _dp:
         raise ImproperlyConfigured("DMARC collection is enabled but not configured correctly: " + "; ".join(_dp) + ".")
 EXPECTED_SNS_TOPIC_ARNS = [a for a in env("MC_EXPECTED_SNS_TOPIC_ARNS", "").split(",") if a]

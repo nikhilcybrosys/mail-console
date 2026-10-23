@@ -275,9 +275,20 @@ What is checked, in this order, before a report is counted: the notification com
 reports address; SES's virus check passed and the spam check did not fail; **SES's DMARC check of the sender passed** (so the
 mail really came from the domain in its From header); the object is in the configured bucket and folder; the message is under
 5 MB, has at most 10 parts and 3 attachments; and each attachment passes the same strict validation as a manual upload. Mail
-that fails a check is recorded with its reason on the DMARC page and dropped. Mail after `MC_DMARC_MAX_PER_DAY` (300) in a rolling
-day is dropped, with one log line per day. A passing DMARC check proves who *sent* the mail, not that the sender is a genuine
-reporting provider; the page shows who each report came from, and reports for domains the console does not watch are refused.
+that fails a check is recorded with its reason on the DMARC page and dropped.
+
+**Who sent it matters as much as whether it is genuine mail.** A passing DMARC check proves who *sent* the mail, not that the
+sender is a real reporting provider: anyone who controls a domain with DMARC set up can mail you a report that claims to be
+from "google.com". So the sender's domain is stored with every report and is part of its uniqueness key (a forged report can never
+take the slot of the genuine one). List the providers you recognise in `MC_DMARC_SENDER_DOMAINS`: their reports are *verified*.
+Reports from any other authenticated sender are still stored and counted, but labelled *unverified* (like uploads), and a verified
+copy of the same report replaces them. The DMARC page lists the unlisted senders it has seen so you can decide which to add.
+
+**Allowances** are kept in separate pools, so strangers cannot use up the allowance of the providers you list: mail that failed the
+checks (its From is unauthenticated, so it is never counted against anyone), listed providers (`MC_DMARC_MAX_PER_DAY`, 300), other
+authenticated senders (`MC_DMARC_UNLISTED_MAX_PER_DAY`, 200) and each sender on its own (`MC_DMARC_MAX_PER_SENDER`, 50), each over a
+rolling day. Mail beyond an allowance is **not deleted**: it stays on the queue and ends in the dead-letter queue, where it can be
+recovered, and one line a day in the log says it happened.
 
 Render the extra files (every option is validated; names are examples):
 
@@ -363,14 +374,15 @@ second worker process:
 | `MC_DMARC_ADDRESS` | `dmarc@reports.example.com` |
 | `MC_DMARC_BUCKET` | `$B` |
 | `MC_DMARC_KEY_PREFIX` | optional, default `dmarc/` |
-| `MC_DMARC_MAX_PER_DAY` | optional, default `300` |
+| `MC_DMARC_SENDER_DOMAINS` | the reporting providers you trust, comma separated (for example `google.com,yahoo.com`); subdomains count. Empty means every mailed report is labelled unverified |
+| `MC_DMARC_MAX_PER_DAY`, `MC_DMARC_UNLISTED_MAX_PER_DAY`, `MC_DMARC_MAX_PER_SENDER` | optional daily allowances, defaults `300`, `200`, `50` |
 | `MC_WORKER_HEARTBEAT_FILE` | give it a different path from the event worker's if both share a volume |
 
 | Process | Command |
 |---|---|
 | DMARC worker | `python manage.py ingest_dmarc_mail` (always, restart on exit) |
 
-The **Setup check** then has a "DMARC collection" group (queue reachable, dead-letter queue, last report received), the DMARC page
+The **Setup check** then has a "DMARC collection" group (queue reachable, dead-letter queue, providers listed, last report received), the DMARC page
 has a "Collection by mail" card, and an alert opens if reports that used to arrive stop for 3 days.
 
 ## Changing or removing things

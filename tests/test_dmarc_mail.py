@@ -55,7 +55,7 @@ def one_report(rid="r1", **kw):
     return mail(("google.com!example.com!1!2.xml.gz", gz(xml(rid=rid, **kw)), "application/gzip"))
 
 
-def run(raw, body=None, **kw):
+def run(raw, body=None, senders=("google.com",), **kw):
     """Process one notification whose stored mail is `raw`. Returns (DmarcMail, how many times S3 was read)."""
     reads = []
 
@@ -66,7 +66,7 @@ def run(raw, body=None, **kw):
         return raw
 
     n = dmarc_mail.read_notice(body or notification(**kw), [TOPIC], now=NOW)
-    row = dmarc_mail.process(n, fetch, now=NOW, allowed=ALLOWED, address=ADDR, bucket=BUCKET, prefix=PREFIX)
+    row = dmarc_mail.process(n, fetch, now=NOW, allowed=ALLOWED, address=ADDR, bucket=BUCKET, prefix=PREFIX, senders=senders)
     return row, reads
 
 
@@ -190,7 +190,7 @@ def test_an_accepted_mail_stores_the_report_as_received_by_mail_not_as_an_upload
     assert row.outcome == "accepted" and row.reports == 1 and row.from_addr == "noreply-dmarc-support@google.com"
     assert reads == [(BUCKET, "dmarc/msg0001")]
     r = DmarcReport.objects.get()
-    assert (r.source, r.uploaded_by, r.uploaded_at, r.message, r.pass_count) == ("inbox", "", None, None, 40) and len(r.file_sha256) == 64
+    assert (r.source, r.sender_domain, r.uploaded_by, r.uploaded_at, r.message, r.pass_count) == ("inbox", "google.com", "", None, None, 40) and len(r.file_sha256) == 64
 
 
 def test_a_report_for_a_domain_the_console_does_not_watch_is_refused_with_the_reason():
@@ -217,7 +217,7 @@ def test_a_mailed_report_replaces_the_uploaded_copy_in_the_numbers():
     now = datetime.now(timezone.utc)
     raw = mail(("r.xml", xml(rid="same", begin=now - timedelta(days=1), end=now - timedelta(hours=1), rows=[("203.0.113.5", 50, "pass", "pass", "none", "example.com")]), "text/xml"))
     n = dmarc_mail.read_notice(notification(), [TOPIC], now=now)
-    assert dmarc_mail.process(n, lambda b, k: raw, now=now, allowed=ALLOWED, address=ADDR, bucket=BUCKET, prefix=PREFIX).outcome == "accepted"
+    assert dmarc_mail.process(n, lambda b, k: raw, now=now, allowed=ALLOWED, address=ADDR, bucket=BUCKET, prefix=PREFIX, senders=["google.com"]).outcome == "accepted"
     (o,) = dmarcstats.overview(30)
     assert o["total"] == 50 and o["uploaded"] == 0
 
@@ -234,23 +234,6 @@ def test_a_genuine_fault_propagates_and_leaves_no_trace_so_the_message_is_retrie
 def test_too_large_or_missing_objects_are_recorded_as_refused(exc, why):
     row, _ = run(exc)
     assert row.outcome == "refused" and why in row.reason
-
-
-def test_the_daily_limit_stops_a_flood_and_logs_one_line_per_day_not_one_per_mail(settings):
-    settings.DMARC_MAX_PER_DAY = 3
-    for i in range(3):
-        assert run(one_report(rid=f"r{i}"), mid=f"ok{i}")[0].outcome == "accepted"
-    for i in range(20):
-        row, reads = run(one_report(rid=f"x{i}"), mid=f"flood{i}")
-        assert row.outcome == "refused" and "daily limit" in row.reason and not reads
-    assert DmarcMail.objects.count() == 4 and DmarcReport.objects.count() == 3
-
-
-def test_the_limit_is_a_rolling_day_so_it_frees_up(settings):
-    settings.DMARC_MAX_PER_DAY = 1
-    run(one_report(rid="a"), mid="a")
-    DmarcMail.objects.update(created_at=NOW - timedelta(days=2))
-    assert run(one_report(rid="b"), mid="b")[0].outcome == "accepted"
 
 
 def test_old_log_lines_are_pruned_after_90_days_and_recent_ones_kept():
@@ -519,3 +502,139 @@ def test_no_alert_when_collection_is_off(settings):
     add_mail("old", ago=timedelta(hours=80))
     alerts.evaluate()
     assert not Alert.objects.filter(key="dmarc_silent").exists()
+
+
+# ---------------------------------------------------------------- who SENT it: listed providers, unlisted senders, forged slots
+def test_a_sender_on_the_list_is_verified_and_a_subdomain_of_it_too_but_a_look_alike_is_not():
+    assert dmarc_mail.is_listed("google.com", ["google.com"]) and dmarc_mail.is_listed("mail.google.com", ["google.com"])
+    for d in ("evilgoogle.com", "google.com.evil.org", "oogle.com", "", "com"):
+        assert not dmarc_mail.is_listed(d, ["google.com"]), d
+    assert not dmarc_mail.is_listed("google.com", [])
+
+
+def test_an_authenticated_sender_that_is_not_listed_is_stored_but_labelled_unverified():
+    row, _ = run(one_report(rid="u1"), senders=[], frm="reports@new-provider.example")
+    assert row.outcome == "accepted" and row.sender_domain == "new-provider.example"
+    r = DmarcReport.objects.get()
+    assert (r.source, r.sender_domain) == ("mail", "new-provider.example")
+
+
+def test_a_forged_report_cannot_take_the_slot_of_the_genuine_one_and_the_genuine_one_replaces_it():
+    """The review finding: with no sender in the key, whoever mailed 'google.com / r1' first made the real report a 'duplicate'."""
+    kw = dict(rid="same")
+    forged, _ = run(mail(("r.xml", xml(**kw, rows=[("203.0.113.9", 400, "fail", "fail", "none", "example.com")]), "text/xml")), mid="forged", frm="x@attacker.example")
+    genuine, _ = run(mail(("r.xml", xml(**kw, rows=[("203.0.113.5", 50, "pass", "pass", "none", "example.com")]), "text/xml")), mid="real")
+    assert (forged.outcome, genuine.outcome) == ("accepted", "accepted")                       # not "duplicate"
+    assert sorted(DmarcReport.objects.values_list("source", "sender_domain")) == [("inbox", "google.com"), ("mail", "attacker.example")]
+    (o,) = dmarcstats.overview(30)
+    assert o["total"] == 50 and o["unlisted"] == 0 and o["failed"] == 0                         # only the verified copy counts
+
+
+def test_unlisted_mail_is_counted_with_a_caveat_until_the_provider_is_listed():
+    for i in range(10):
+        r = run(mail(("r.xml", xml(rid=f"p{i}", begin=NOW - timedelta(days=i + 1), end=NOW - timedelta(days=i + 1) + timedelta(hours=23),
+                                   rows=[("203.0.113.5", 30, "pass", "pass", "none", "example.com")]), "text/xml")), mid=f"m{i}", senders=[], frm="r@newco.example")[0]
+        assert r.outcome == "accepted"
+    (o,) = dmarcstats.overview(30)
+    assert o["unlisted"] == 10 and o["state"] == "ready" and "senders you have not listed" in o["advice"] and "uploaded by hand" not in o["advice"]
+    assert dmarcstats.collection(True)["unlisted_senders"] == ["newco.example"]
+
+
+def test_the_page_labels_unlisted_senders_and_names_the_sender_of_verified_reports(settings):
+    from django.urls import reverse
+    from apps.core.rbac import DELIVERABILITY_ADMIN
+    from .test_views import login
+    settings.DMARC_ENABLED = True
+    for mid, frm, senders in (("a", "n@google.com", ["google.com"]), ("b", "r@newco.example", [])):
+        run(mail(("r.xml", xml(rid=mid, org=mid), "text/xml")), mid=mid, frm=frm, senders=senders)
+    c, _ = login(DELIVERABILITY_ADMIN, "d@example.com")
+    html = c.get(reverse("dmarc")).content.decode()
+    assert "sender not on your list" in html and "newco.example" in html and "received by mail from google.com" in html and "MC_DMARC_SENDER_DOMAINS" in html
+
+
+def test_the_setup_check_warns_until_providers_are_listed(settings):
+    settings.DMARC_SENDER_DOMAINS = []
+    c, _ = checks(settings)
+    assert c["dsenders"].status == "warn" and "MC_DMARC_SENDER_DOMAINS" in c["dsenders"].fix
+    settings.DMARC_SENDER_DOMAINS = ["google.com", "yahoo.com"]
+    c, _ = checks(settings)
+    assert c["dsenders"].status == "ok" and "google.com, yahoo.com" in c["dsenders"].detail
+
+
+# ---------------------------------------------------------------- allowances: separate pools, nothing silently deleted
+def test_mail_that_failed_the_checks_cannot_use_up_a_listed_providers_allowance(settings):
+    settings.DMARC_MAX_PER_DAY = 2
+    for i in range(10):                                                   # unauthenticated mail CLAIMING to be from google.com
+        assert run(one_report(), mid=f"spoof{i}", dmarc="FAIL")[0].sender_domain == ""
+    for i in range(2):
+        assert run(one_report(rid=f"g{i}"), mid=f"g{i}")[0].outcome == "accepted"      # the real sender is unaffected
+    with pytest.raises(dmarc_mail.OverLimit):
+        run(one_report(rid="g9"), mid="g9")                                            # and its own allowance still holds
+
+
+def test_unlisted_senders_have_their_own_pool_and_cannot_starve_the_listed(settings):
+    settings.DMARC_UNLISTED_MAX_PER_DAY, settings.DMARC_MAX_PER_SENDER = 2, 100
+    for i in range(2):
+        assert run(one_report(rid=f"s{i}"), mid=f"s{i}", frm=f"r@d{i}.example")[0].outcome == "accepted"
+    with pytest.raises(dmarc_mail.OverLimit):
+        run(one_report(rid="s9"), mid="s9", frm="r@d9.example")
+    assert run(one_report(rid="listed"), mid="listed")[0].outcome == "accepted"        # a listed provider still gets through
+
+
+def test_one_sender_cannot_use_more_than_its_own_allowance(settings):
+    settings.DMARC_MAX_PER_SENDER = 2
+    for i in range(2):
+        run(one_report(rid=f"a{i}"), mid=f"a{i}")
+    with pytest.raises(dmarc_mail.OverLimit):
+        run(one_report(rid="a9"), mid="a9")
+    assert run(one_report(rid="b0"), mid="b0", frm="x@yahoo.com", senders=["google.com", "yahoo.com"])[0].outcome == "accepted"
+
+
+def test_an_exhausted_allowance_keeps_the_message_and_logs_one_line_a_day_not_one_per_mail(settings):
+    settings.DMARC_MAX_PER_SENDER = 1
+    run(one_report(rid="first"), mid="first")
+    for i in range(20):
+        with pytest.raises(dmarc_mail.OverLimit):
+            run(one_report(rid=f"x{i}"), mid=f"x{i}")
+    assert not DmarcMail.objects.filter(ses_message_id__startswith="x").exists()                    # never marked done, so it is retried
+    assert DmarcMail.objects.filter(ses_message_id__startswith="limit-").count() == 1 and DmarcReport.objects.count() == 1
+
+
+def test_the_unauthenticated_log_is_capped_and_the_rest_is_kept_not_deleted(monkeypatch):
+    monkeypatch.setattr(dmarc_mail, "UNAUTHENTICATED_MAX_PER_DAY", 3)
+    for i in range(3):
+        assert run(one_report(), mid=f"j{i}", virus="FAIL")[0].outcome == "refused"
+    with pytest.raises(dmarc_mail.OverLimit):
+        run(one_report(), mid="j9", virus="FAIL")
+    assert DmarcMail.objects.filter(ses_message_id__startswith="limit-").count() == 1
+
+
+def test_the_allowances_are_a_rolling_day_so_they_free_up(settings):
+    settings.DMARC_MAX_PER_SENDER = 1
+    run(one_report(rid="a"), mid="a")
+    with pytest.raises(dmarc_mail.OverLimit):
+        run(one_report(rid="b"), mid="b")
+    DmarcMail.objects.update(created_at=NOW - timedelta(days=2))
+    assert run(one_report(rid="b"), mid="b")[0].outcome == "accepted"
+
+
+def test_the_worker_keeps_a_message_when_an_allowance_is_used_up(dmarc_on, monkeypatch, settings):
+    settings.DMARC_MAX_PER_SENDER, settings.DMARC_SENDER_DOMAINS = 1, ["google.com"]
+    assert drain([notification(mid="w1"), notification(mid="w2")], raw=one_report(rid="w"), monkeypatch=monkeypatch) == ["h0"]
+
+
+def test_sender_domains_are_validated_at_start_up():
+    ok = _settings(**GOOD, MC_DMARC_SENDER_DOMAINS="google.com, yahoo.com")
+    assert ok.stdout.strip() == "True"
+    for bad in ("*.google.com", "not a domain", "google", "https://google.com"):
+        proc = _settings(**GOOD, MC_DMARC_SENDER_DOMAINS=bad)
+        assert proc.returncode != 0 and "MC_DMARC_SENDER_DOMAINS" in proc.stderr
+
+
+def test_the_migrations_match_the_models_so_the_database_has_the_constraints_the_code_assumes():
+    from io import StringIO
+    out = StringIO()
+    try:
+        call_command("makemigrations", "--check", "--dry-run", stdout=out, stderr=out)
+    except SystemExit:
+        pytest.fail("models and migrations differ: " + out.getvalue())
