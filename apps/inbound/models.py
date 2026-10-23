@@ -61,3 +61,21 @@ class DmarcReport(models.Model):
     class Meta:
         # Per source, so an uploaded (unverified) report can never occupy the slot of the genuine one when it arrives by mail.
         constraints = [models.UniqueConstraint(fields=["source", "org_name", "report_id"], name="uniq_dmarc_report")]
+
+
+class DmarcMail(models.Model):
+    """One line per mail that arrived at the reports address: what happened to it. Not the mail itself (that is in S3 for a few days).
+
+    `ses_message_id` is unique, which makes a redelivered queue message harmless. Rows are pruned after 90 days.
+    """
+
+    ses_message_id = models.CharField(max_length=200, unique=True)
+    received_at = models.DateTimeField(db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    from_addr = models.CharField(max_length=320, blank=True)
+    outcome = models.CharField(max_length=10)  # accepted | duplicate | refused
+    reason = models.CharField(max_length=300, blank=True)
+    reports = models.PositiveSmallIntegerField(default=0)
+
+    class Meta:
+        ordering = ["-received_at"]

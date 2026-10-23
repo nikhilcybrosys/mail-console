@@ -6,8 +6,18 @@
   <span class="btn-group">{% for p in periods %}<a class="btn btn-sm {% if p == days %}btn-primary{% endif %}" href="?days={{ p }}{% if current %}&amp;domain={{ current.domain|urlencode }}{% endif %}">{{ p }}d</a>{% endfor %}
   {% if can_upload %}<a class="btn" href="{% url 'dmarc_upload' %}">{% icon "plus" %}<span>{% trans "Upload reports" %}</span></a>{% endif %}</span></div>
 <div class="stack">
+{% if collection %}
+  <section class="card" aria-labelledby="col-h"><div class="card-head"><div class="card-title" id="col-h">{% trans "Collection by mail" %}</div>
+    {% if not collection.enabled %}<span class="badge badge-warn">{% trans "switched off" %}</span>{% elif collection.silent %}<span class="badge badge-warn">{% trans "quiet for 3+ days" %}</span>{% elif collection.last %}<span class="badge badge-ok">{% trans "working" %}</span>{% else %}<span class="badge badge-plain">{% trans "waiting for the first report" %}</span>{% endif %}</div>
+  <div class="card-body stack">
+    <p class="muted">{% if collection.last %}{% blocktrans with t=collection.last|timesince %}Last report received {{ t }} ago.{% endblocktrans %}{% else %}{% trans "No report has arrived by mail yet." %}{% endif %}
+      {% blocktrans with a=collection.accepted d=collection.duplicate r=collection.refused %}In the last 7 days: {{ a }} added, {{ d }} already known, {{ r }} turned away.{% endblocktrans %}</p>
+    {% if collection.refusals %}<div class="table-wrap table-flush"><table class="table"><thead><tr><th>{% trans "Received" %}</th><th>{% trans "From" %}</th><th>{% trans "Why it was turned away" %}</th></tr></thead><tbody>
+    {% for m in collection.refusals %}<tr><td class="muted">{{ m.received_at|date:"j M H:i" }}</td><td class="mono">{{ m.from_addr|default:"-" }}</td><td>{{ m.reason }}</td></tr>{% endfor %}</tbody></table></div>{% endif %}
+  </div></section>
+{% endif %}
 {% if not domains %}
-  <section class="card">{% include "components/_empty.html" with icon="shield-check" title=_("No DMARC reports in this period") text=_("Reports go to the address in your DMARC record (rua=mailto:…). Download the attachments from that mailbox and upload them here.") %}</section>
+  <section class="card">{% include "components/_empty.html" with icon="shield-check" title=_("No DMARC reports in this period") text=_("Reports go to the address in your DMARC record (rua=mailto:…). When collection by mail is switched on they appear here by themselves; otherwise download the attachments from that mailbox and upload them here.") %}</section>
 {% else %}
   <section class="card" aria-labelledby="dm-h"><div class="card-head"><div class="card-title" id="dm-h">{% trans "By domain" %}</div></div>
   <div class="table-wrap table-flush"><table class="table"><thead><tr><th>{% trans "Domain" %}</th><th>{% trans "Policy" %}</th><th class="col-num">{% trans "Messages" %}</th><th class="col-num">{% trans "Passing" %}</th><th class="col-num">{% trans "Days covered" %}</th><th>{% trans "Verdict" %}</th></tr></thead><tbody>
@@ -26,7 +36,7 @@
   <section class="card" aria-labelledby="rp-h"><div class="card-head"><div class="card-title" id="rp-h">{% trans "Recent reports" %}</div></div>
   <div class="table-wrap table-flush"><table class="table"><thead><tr><th>{% trans "Reported by" %}</th><th>{% trans "Covers" %}</th><th class="col-num">{% trans "Messages" %}</th><th>{% trans "Added" %}</th></tr></thead><tbody>
   {% for r in reports %}<tr><td class="cell-primary">{{ r.org_name }}</td><td class="muted">{{ r.begin|date:"j M" }} to {{ r.end|date:"j M Y" }}</td><td class="col-num num">{{ r.pass_count|add:r.fail_count }}</td>
-    <td class="muted">{% if r.source == "upload" %}<span class="badge badge-warn">{% trans "uploaded, not verified" %}</span> <span class="muted">{% trans "by" %} {{ r.uploaded_by }}</span>{% else %}{% trans "from the inbox" %}{% endif %}</td></tr>{% endfor %}</tbody></table></div></section>
+    <td class="muted">{% if r.source == "upload" %}<span class="badge badge-warn">{% trans "uploaded, not verified" %}</span> <span class="muted">{% trans "by" %} {{ r.uploaded_by }}</span>{% else %}{% trans "received by mail" %}{% endif %}</td></tr>{% endfor %}</tbody></table></div></section>
   {% endif %}
 {% endif %}
 </div>

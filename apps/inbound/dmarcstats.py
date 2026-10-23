@@ -7,7 +7,7 @@ from datetime import timedelta
 from django.db.models import Exists, OuterRef
 from django.utils import timezone
 
-from .models import DmarcReport
+from .models import DmarcMail, DmarcReport
 
 PERIODS = (7, 30, 90)
 MIN_MESSAGES = 100
@@ -96,3 +96,19 @@ def recent_reports(domain=None, limit=25, days=None, now=None):
     if domain:
         qs = qs.filter(domain=domain)
     return list(qs[:limit])
+
+
+COLLECTION_DAYS = 7
+SILENT_AFTER = timedelta(hours=72)
+
+
+def collection(enabled, now=None):
+    """The "Collection" card: is mail delivery of reports working, and what was turned away? None when there is nothing to show."""
+    now = now or timezone.now()
+    week = DmarcMail.objects.filter(created_at__gte=now - timedelta(days=COLLECTION_DAYS))
+    if not enabled and not DmarcMail.objects.exists():
+        return None
+    last = DmarcMail.objects.exclude(outcome="refused").order_by("-received_at").values_list("received_at", flat=True).first()
+    counts = {o: week.filter(outcome=o).count() for o in ("accepted", "duplicate", "refused")}
+    return {"enabled": enabled, "last": last, "silent": bool(enabled and last and now - last > SILENT_AFTER), **counts,
+            "refusals": list(week.filter(outcome="refused").order_by("-received_at")[:10])}

@@ -215,6 +215,33 @@ if SEND_ENABLED:
 
 SQS_EVENTS_QUEUE_URL = env("MC_SQS_EVENTS_QUEUE_URL", "")
 SQS_INBOUND_QUEUE_URL = env("MC_SQS_INBOUND_QUEUE_URL", "")
+
+# --- DMARC reports by mail (OFF unless MC_SQS_DMARC_QUEUE_URL is set) -------------------------------------------------
+# Mailbox providers e-mail aggregate reports to the address in your DMARC record. SES receives them on a reports address,
+# stores the raw message in S3 and announces it on an SNS topic; this console reads the queue behind that topic.
+DMARC_QUEUE_URL = env("MC_SQS_DMARC_QUEUE_URL", "")
+DMARC_TOPIC_ARNS = [a.strip() for a in env("MC_DMARC_TOPIC_ARNS", "").split(",") if a.strip()]
+DMARC_ADDRESS = env("MC_DMARC_ADDRESS", "").strip().lower()      # the one address reports are sent to
+DMARC_BUCKET = env("MC_DMARC_BUCKET", "").strip()                # where SES stores the raw mail (never taken from a notification)
+DMARC_KEY_PREFIX = env("MC_DMARC_KEY_PREFIX", "dmarc/").strip()
+DMARC_MAX_PER_DAY = int(env_float("MC_DMARC_MAX_PER_DAY", 300))  # mails handled per rolling day; a flood beyond this is dropped
+DMARC_ENABLED = bool(DMARC_QUEUE_URL)
+if DMARC_ENABLED:
+    _dp = []
+    if not re.fullmatch(r"https://sqs\.[a-z0-9-]+\.amazonaws\.com/\d{12}/[A-Za-z0-9_-]{1,80}", DMARC_QUEUE_URL):
+        _dp.append("MC_SQS_DMARC_QUEUE_URL must be an SQS queue URL")
+    if not DMARC_TOPIC_ARNS or not all(re.fullmatch(r"arn:aws:sns:[a-z0-9-]+:\d{12}:[A-Za-z0-9_-]{1,256}", a) for a in DMARC_TOPIC_ARNS):
+        _dp.append("MC_DMARC_TOPIC_ARNS must list the SNS topic ARN(s) SES publishes the reports' notifications to")
+    if not re.fullmatch(r"[a-z0-9._%+-]{1,64}@([a-z0-9-]+\.)+[a-z]{2,}", DMARC_ADDRESS):
+        _dp.append("MC_DMARC_ADDRESS must be one plain address")
+    if not re.fullmatch(r"[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]", DMARC_BUCKET):
+        _dp.append("MC_DMARC_BUCKET must be an S3 bucket name")
+    if not re.fullmatch(r"[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*/", DMARC_KEY_PREFIX) or ".." in DMARC_KEY_PREFIX:
+        _dp.append("MC_DMARC_KEY_PREFIX must be a folder-style prefix ending in /, such as dmarc/")
+    if not 1 <= DMARC_MAX_PER_DAY <= 100_000:
+        _dp.append("MC_DMARC_MAX_PER_DAY must be between 1 and 100000")
+    if _dp:
+        raise ImproperlyConfigured("DMARC collection is enabled but not configured correctly: " + "; ".join(_dp) + ".")
 EXPECTED_SNS_TOPIC_ARNS = [a for a in env("MC_EXPECTED_SNS_TOPIC_ARNS", "").split(",") if a]
 AUDIT_BUCKET = env("MC_AUDIT_BUCKET", "")
 CONTENT_BUCKET = env("MC_CONTENT_BUCKET", "")

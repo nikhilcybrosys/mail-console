@@ -21,11 +21,13 @@ toolchain.
 - **Estimated cost:** SES message charges this month and for the selected period, by sender app. It is a floor, not your bill: each
   recipient counts as one email at `MC_SES_PRICE_PER_1000` (default `0.10`), and attachment data charges, any free tier,
   Virtual Deliverability Manager and dedicated IPs are not visible to the console.
-- **DMARC reports:** upload the report attachments mailbox providers send to your DMARC address (`.xml`, `.gz` or `.zip`) and see,
+- **DMARC reports:** have them collected from a reports address (opt-in, `aws/README.md` section 9) or upload the attachments
+  mailbox providers send (`.xml`, `.gz` or `.zip`), and see,
   per domain, the pass rate over 7, 30 or 90 days, who is sending as your domain, and whether it looks safe to move from
   `p=none` to enforcement (needs at least a week of reports and 100 messages, and at most 2% failing). Uploads are validated
   strictly, kept as numbers only (with the file's fingerprint), and labelled unverified; a report that later arrives by mail
-  replaces its uploaded copy in the counts.
+  replaces its uploaded copy in the counts. Mailed reports are only counted when SES's virus and DMARC checks of the sender
+  passed, within size limits and a daily cap; everything turned away is listed with its reason.
 - **Tamper-evident audit log:** every sign-in, change and message-body view, hash-chained so edits show.
 
 <p align="center">

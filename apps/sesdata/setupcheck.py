@@ -306,10 +306,52 @@ def _compose_checks(region):
     return out
 
 
+def _dmarc_checks(now, sqs_client):
+    """Only when collection of DMARC reports by mail is switched on: queue, dead-letter queue, and proof that reports arrive."""
+    from apps.inbound.models import DmarcMail
+    g, out = "DMARC collection", []
+    url = settings.DMARC_QUEUE_URL
+    try:
+        if sqs_client is None:
+            import boto3
+            sqs_client = boto3.client("sqs", region_name=_queue_region(url))
+        attrs = sqs_client.get_queue_attributes(QueueUrl=url, AttributeNames=["All"]).get("Attributes", {})
+    except Exception as exc:  # noqa: BLE001: reported, not raised; this is a diagnostic page
+        out.append(Check(g, "dqueue", "Cannot read the DMARC report queue", FAIL, f"AWS answered: {_short(exc)}.",
+                         "Check MC_SQS_DMARC_QUEUE_URL and that the app role has the DMARC policy (aws/policies/dmarc-inbound.json)."))
+    else:
+        out.append(Check(g, "dqueue", "DMARC report queue reachable", OK,
+                         f"{attrs.get('ApproximateNumberOfMessages', '?')} waiting, {attrs.get('ApproximateNumberOfMessagesNotVisible', '?')} being processed."))
+        try:
+            if int(attrs.get("ApproximateNumberOfMessages", 0)) > 100:
+                out[-1].status, out[-1].fix = WARN, "A backlog this large means the DMARC worker is stopped or failing; check its log."
+        except ValueError:
+            pass
+        if "RedrivePolicy" not in attrs:
+            out.append(Check(g, "ddlq", "No dead-letter queue on the DMARC queue", WARN, "A notification that cannot be processed would be retried until it expires.",
+                             "Attach a dead-letter queue with a redrive policy (aws/README.md, DMARC reports by mail)."))
+        if not (attrs.get("SqsManagedSseEnabled") == "true" or attrs.get("KmsMasterKeyId")):
+            out.append(Check(g, "dsse", "DMARC queue is not encrypted", WARN, "", "Enable server-side encryption on the queue."))
+    last = DmarcMail.objects.exclude(outcome="refused").order_by("-received_at").values_list("received_at", flat=True).first()
+    if last is None:
+        out.append(Check(g, "darrived", "No DMARC report has arrived by mail yet", WARN if not DmarcMail.objects.exists() else INFO,
+                         "Providers send one a day, so the first can take up to 48 hours after the DNS record points at the reports address.",
+                         "If it stays empty, check the reports address's MX record and the SES receipt rule."))
+    else:
+        age = now - last
+        out.append(Check(g, "darrived", "DMARC reports are arriving", OK if age < timedelta(hours=72) else WARN,
+                         f"Last report received {_minutes(age) if age < timedelta(hours=2) else str(int(age.total_seconds() // 3600)) + ' hours'} ago."
+                         + ("" if age < timedelta(hours=72) else " Providers send daily, so check the DNS record and the DMARC worker.")))
+    refused = DmarcMail.objects.filter(outcome="refused", created_at__gte=now - timedelta(days=7)).count()
+    if refused:
+        out.append(Check(g, "drefused", "Some mail was turned away in the last 7 days", INFO, f"{refused} mail(s); the DMARC page lists each with its reason."))
+    return out
+
+
 def run_checks(region, *, user=None, sqs_client=None, now=None):
     now = now or timezone.now()
     ses, idents = _ses_checks(region, now, user)
-    return ses + _pipeline_checks(region, idents, now, sqs_client) + _access_checks(user) + (_compose_checks(region) if settings.SEND_ENABLED else []) + _hardening_checks()
+    return ses + _pipeline_checks(region, idents, now, sqs_client) + _access_checks(user) + (_dmarc_checks(now, sqs_client) if settings.DMARC_ENABLED else []) + (_compose_checks(region) if settings.SEND_ENABLED else []) + _hardening_checks()
 
 
 def grouped(checks):

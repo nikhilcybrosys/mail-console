@@ -260,6 +260,119 @@ display name and Reply-To. Run **Setup check, Test write roles** to prove the se
 To allow a new address: add it to `--send-from`, re-render and run the last two `put-role-policy` commands again, and add it to
 `MC_SEND_FROM_ADDRESSES`. The console cannot widen the AWS policy, so a new address in the environment alone does not work.
 
+## 9. DMARC reports by mail (optional)
+
+Off by default. Mailbox providers e-mail a DMARC aggregate report to the address in your DMARC record once a day. With this
+section the console receives them itself, so nobody has to download and upload them. It needs a region where SES can **receive**
+mail (`ap-south-1` is one; check the SES documentation for yours) and a subdomain used only for reports, for example
+`reports.example.com`, so your normal mailboxes are untouched.
+
+```
+provider -> reports.example.com (MX) -> SES receiving -> S3 (raw mail, deleted after 14 days) + SNS -> SQS (+ dead-letter queue) -> console worker
+```
+
+What is checked, in this order, before a report is counted: the notification comes from the allowed topic and is for exactly the
+reports address; SES's virus check passed and the spam check did not fail; **SES's DMARC check of the sender passed** (so the
+mail really came from the domain in its From header); the object is in the configured bucket and folder; the message is under
+5 MB, has at most 10 parts and 3 attachments; and each attachment passes the same strict validation as a manual upload. Mail
+that fails a check is recorded with its reason on the DMARC page and dropped. Mail after `MC_DMARC_MAX_PER_DAY` (300) in a rolling
+day is dropped, with one log line per day. A passing DMARC check proves who *sent* the mail, not that the sender is a genuine
+reporting provider; the page shows who each report came from, and reports for domains the console does not watch are refused.
+
+Render the extra files (every option is validated; names are examples):
+
+```bash
+python3 aws/render.py ... \
+  --dmarc-queue-arn arn:aws:sqs:ap-south-1:<account>:mail-console-dmarc \
+  --dmarc-topic-arn arn:aws:sns:ap-south-1:<account>:mail-console-dmarc \
+  --dmarc-bucket example-mail-console-dmarc
+```
+
+The topic and queue ARNs must be the ones created in 9.2 (they follow from the names you choose, so you can render first).
+
+**9.1 Bucket** (private, encrypted with the bucket's own key, mail deleted after 14 days). Do **not** turn on SES "message
+encryption": it encrypts on the client side and the console could not read the mail. Do not turn on S3 Object Lock.
+
+```bash
+B=example-mail-console-dmarc; R=ap-south-1
+aws s3api create-bucket --bucket "$B" --region "$R" --create-bucket-configuration LocationConstraint="$R"
+aws s3api put-public-access-block --bucket "$B" --public-access-block-configuration BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
+aws s3api put-bucket-encryption --bucket "$B" --server-side-encryption-configuration '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}'
+aws s3api put-bucket-lifecycle-configuration --bucket "$B" --lifecycle-configuration '{"Rules":[{"ID":"expire-report-mail","Status":"Enabled","Filter":{"Prefix":"dmarc/"},"Expiration":{"Days":14},"AbortIncompleteMultipartUpload":{"DaysAfterInitiation":2}}]}'
+aws s3api put-bucket-policy --bucket "$B" --policy file://aws-rendered/dmarc-bucket-policy.json
+```
+
+**9.2 Topic, queue and dead-letter queue** (same pattern as step 1):
+
+```bash
+DT=$(aws sns create-topic --name mail-console-dmarc --query TopicArn --output text)
+aws sns set-topic-attributes --topic-arn "$DT" --attribute-name Policy --attribute-value file://aws-rendered/dmarc-topic-policy.json
+DLQ_URL=$(aws sqs create-queue --queue-name mail-console-dmarc-dlq --attributes MessageRetentionPeriod=1209600,SqsManagedSseEnabled=true --query QueueUrl --output text)
+DLQ_ARN=$(aws sqs get-queue-attributes --queue-url "$DLQ_URL" --attribute-names QueueArn --query Attributes.QueueArn --output text)
+cat > dmarc-queue-create.json <<JSON
+{"VisibilityTimeout":"120","MessageRetentionPeriod":"345600","SqsManagedSseEnabled":"true",
+ "RedrivePolicy":"{\"deadLetterTargetArn\":\"$DLQ_ARN\",\"maxReceiveCount\":\"5\"}"}
+JSON
+DQ_URL=$(aws sqs create-queue --queue-name mail-console-dmarc --attributes file://dmarc-queue-create.json --query QueueUrl --output text)
+aws sqs set-queue-attributes --queue-url "$DQ_URL" --attributes file://aws-rendered/dmarc-queue-attributes.json
+DQ_ARN=$(aws sqs get-queue-attributes --queue-url "$DQ_URL" --attribute-names QueueArn --query Attributes.QueueArn --output text)
+aws sns subscribe --topic-arn "$DT" --protocol sqs --notification-endpoint "$DQ_ARN"
+```
+
+**9.3 Let the console role read them.** This adds one statement to the permissions boundary (read objects in that one bucket
+folder) and gives the app role two statements (consume that one queue, read that one folder). It cannot write or delete in S3,
+list the bucket, or send mail. Without `s3:ListBucket`, S3 answers "access denied" rather than "not found" for a missing object,
+so a notification for mail that has already expired is retried and then ends in the dead-letter queue, which is harmless.
+
+```bash
+aws iam create-policy-version --policy-arn "$BOUNDARY_ARN" --policy-document file://aws-rendered/permissions-boundary-dmarc.json --set-as-default
+aws iam put-role-policy --role-name mail-console-app --policy-name dmarc-inbound --policy-document file://aws-rendered/dmarc-inbound.json
+```
+
+**9.4 Receive the mail.** One receipt rule, scanning on, for exactly the reports address. SES allows **one active rule set per
+region**: if you already have one, add this rule to it instead and pass its name as `--dmarc-rule-set` when rendering.
+
+```bash
+cat > dmarc-rule.json <<JSON
+{"Name":"dmarc-reports","Enabled":true,"TlsPolicy":"Optional","ScanEnabled":true,"Recipients":["dmarc@reports.example.com"],
+ "Actions":[{"S3Action":{"BucketName":"$B","ObjectKeyPrefix":"dmarc/","TopicArn":"$DT"}}]}
+JSON
+aws ses create-receipt-rule-set --rule-set-name mail-console-dmarc
+aws ses create-receipt-rule --rule-set-name mail-console-dmarc --rule file://dmarc-rule.json
+aws ses set-active-receipt-rule-set --rule-set-name mail-console-dmarc
+```
+
+**9.5 DNS** (at your DNS host):
+
+| Name | Type | Value |
+|---|---|---|
+| `reports.example.com` | MX | `10 inbound-smtp.ap-south-1.amazonaws.com` (use your region's endpoint) |
+| `_dmarc.example.com` | TXT | your current record with the new address added to `rua`, for example `v=DMARC1; p=none; rua=mailto:dmarc@reports.example.com,mailto:<your old address>` |
+
+Keep the old address in `rua` for a couple of weeks, then drop it. A report that arrives both ways is counted once. A provider that
+refuses to send to the subdomain may need the external-destination record `example.com._report._dmarc.reports.example.com`
+TXT `v=DMARC1`.
+
+**9.6 Run the worker.** Set these in the console's environment (the console refuses to start if they are wrong), then start a
+second worker process:
+
+| Variable | Value |
+|---|---|
+| `MC_SQS_DMARC_QUEUE_URL` | `$DQ_URL` (setting this switches the feature on) |
+| `MC_DMARC_TOPIC_ARNS` | `$DT` (comma separated) |
+| `MC_DMARC_ADDRESS` | `dmarc@reports.example.com` |
+| `MC_DMARC_BUCKET` | `$B` |
+| `MC_DMARC_KEY_PREFIX` | optional, default `dmarc/` |
+| `MC_DMARC_MAX_PER_DAY` | optional, default `300` |
+| `MC_WORKER_HEARTBEAT_FILE` | give it a different path from the event worker's if both share a volume |
+
+| Process | Command |
+|---|---|
+| DMARC worker | `python manage.py ingest_dmarc_mail` (always, restart on exit) |
+
+The **Setup check** then has a "DMARC collection" group (queue reachable, dead-letter queue, last report received), the DMARC page
+has a "Collection by mail" card, and an alert opens if reports that used to arrive stop for 3 days.
+
 ## Changing or removing things
 Remove the SES event destination before deleting the topic, and delete the subscription before the queue. Delete the
 roles in the reverse order of creation (write roles, then the app role, then the boundary policy). Do not delete the

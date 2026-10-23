@@ -102,6 +102,12 @@ def evaluate(now=None, silent_minutes=None):
         _set(f"silent:{cs}", "warn", f"No SES events for config set {cs or '(none)'} in {_dur(limit)}+",
              "Pipeline stalled or senders stopped. Usual gap between sends is much shorter than this.", (now - ts) > limit)
 
+    from apps.inbound import dmarcstats  # imported here: inbound must not be needed to import this module
+    col = dmarcstats.collection(settings.DMARC_ENABLED, now)
+    _set("dmarc_silent", "warn", "No DMARC reports received by mail for 3+ days",
+         "Reports normally arrive daily. Check the reports address's MX record, the SES receipt rule and the DMARC worker. (Only raised once reports have arrived before.)",
+         bool(col and col["silent"]))
+
     latest = {}
     for r in DnsCheckResult.objects.order_by("checked_at"):
         latest[(r.domain, r.record_kind, tuple(r.expected))] = r
