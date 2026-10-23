@@ -84,7 +84,8 @@ Write and send a one-off message from an address you own, without leaving the co
 - **Every send needs a passkey**, is attributed to the person in the audit log and in AWS CloudTrail, and goes through your
   configuration set so it appears in Sent mail with its delivery timeline. The audit log records who, from, how many and the
   message id, never the body.
-- **Guardrails:** per-message, per-person and per-day recipient limits; recipients on the SES suppression list are refused; line
+- **Guardrails:** per-message, per-person and per-day recipient limits, plus an optional daily limit for each From address (set under
+  Sending addresses, counted across everyone, so a sensitive address like a payments one can have a low ceiling of its own); recipients on the SES suppression list are refused; line
   breaks in addresses or subjects are refused; what is sent is exactly what was previewed; a draft can only be sent once.
 - **If AWS gives no clear answer** (a timeout), the message is marked "may have been sent" and is not offered for re-sending until
   someone checks Sent mail and says it did not go out. The send client never retries automatically, so a lost response cannot

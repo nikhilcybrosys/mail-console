@@ -10,6 +10,9 @@ class SenderAddress(models.Model):
     display_name = models.CharField(max_length=60, blank=True)
     reply_to = models.CharField(max_length=254, blank=True)
     enabled = models.BooleanField(default=False)
+    # Optional ceiling on recipients per rolling 24 hours for this From address, for everyone together (on top of the
+    # per-person and everyone limits). Null = no limit of its own.
+    daily_limit = models.PositiveIntegerField(null=True, blank=True)
     updated_by = models.CharField(max_length=254, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -32,6 +35,9 @@ class Draft(models.Model):
     # draft: editable. sending: a send is in progress. unknown: the send call ended without a clear answer, so the mail
     # MAY have gone out; it must be checked in Sent mail before anyone sends it again.
     state = models.CharField(max_length=10, default=DRAFT)
+    # Recipients reserved against the limits while a send is in flight or its outcome is unknown, so two sends at once
+    # cannot both pass a limit that only one of them fits under. Cleared when the draft returns to a plain draft.
+    reserved = models.PositiveIntegerField(default=0)
     updated_at = models.DateTimeField(auto_now=True)
     created_at = models.DateTimeField(auto_now_add=True)
 

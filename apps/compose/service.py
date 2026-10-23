@@ -19,7 +19,7 @@ from botocore.exceptions import ClientError
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
-from django.db import transaction
+from django.db import connection, transaction
 from django.db.models import Sum
 from django.utils import timezone
 
@@ -282,14 +282,24 @@ def content_hash(p):
 
 
 # ---------------------------------------------------------------- limits
+_SEND_LOCK = 735_001_243  # pg_advisory_xact_lock key for "check the limits and reserve", one at a time across all sends
+_IN_FLIGHT = (Draft.SENDING, Draft.UNKNOWN)  # unknown counts too: the mail may have gone out
+
+
+def _reserved(**f):
+    return Draft.objects.filter(state__in=_IN_FLIGHT, **f).aggregate(n=Sum("reserved"))["n"] or 0
+
+
 def usage(user_email, now=None):
+    """Recipients used, counting both what was sent and what is reserved by sends still in flight."""
     now = now or timezone.now()
 
     def used(**f):
         return SentMail.objects.filter(**f).aggregate(n=Sum("recipient_count"))["n"] or 0
-    return {"hour": used(user_email=user_email, sent_at__gte=now - timedelta(hours=1)),
-            "day": used(user_email=user_email, sent_at__gte=now - timedelta(hours=24)),
-            "all_day": used(sent_at__gte=now - timedelta(hours=24))}
+    mine = _reserved(user__email=user_email)
+    return {"hour": used(user_email=user_email, sent_at__gte=now - timedelta(hours=1)) + mine,
+            "day": used(user_email=user_email, sent_at__gte=now - timedelta(hours=24)) + mine,
+            "all_day": used(sent_at__gte=now - timedelta(hours=24)) + _reserved()}
 
 
 def limits(user_email, now=None):
@@ -298,7 +308,18 @@ def limits(user_email, now=None):
             "all_left": max(settings.SEND_PER_DAY - u["all_day"], 0)}
 
 
-def check_limits(user_email, n, now=None):
+def address_left(from_address, now=None):
+    """Recipients this From address may still be sent to in the next window, or None if it has no limit of its own."""
+    addr = (from_address or "").lower()
+    row = SenderAddress.objects.filter(address=addr).only("daily_limit").first()
+    if row is None or row.daily_limit is None:
+        return None
+    now = now or timezone.now()
+    used = SentMail.objects.filter(from_address=addr, sent_at__gte=now - timedelta(hours=24)).aggregate(n=Sum("recipient_count"))["n"] or 0
+    return max(row.daily_limit - used - _reserved(from_address=addr), 0)
+
+
+def check_limits(user_email, n, now=None, from_address=None):
     left = limits(user_email, now)
     if n > left["hour_left"]:
         raise SendError(f"That would pass your hourly limit of {settings.SEND_PER_USER_PER_HOUR} recipients ({left['hour_left']} left). Try again later.")
@@ -306,6 +327,9 @@ def check_limits(user_email, n, now=None):
         raise SendError(f"That would pass your daily limit of {settings.SEND_PER_USER_PER_DAY} recipients ({left['day_left']} left).")
     if n > left["all_left"]:
         raise SendError(f"The daily limit for everyone ({settings.SEND_PER_DAY} recipients) would be passed ({left['all_left']} left).")
+    addr_left = address_left(from_address, now) if from_address else None
+    if addr_left is not None and n > addr_left:
+        raise SendError(f"{from_address} has a daily limit that would be passed ({addr_left} recipients left in the last 24 hours).")
 
 
 # ---------------------------------------------------------------- drafts
@@ -336,6 +360,8 @@ def _friendly(code):
 def send(user, draft_id, expected_hash, region, request=None):
     """Send exactly the draft that was previewed, once. Returns the SentMail row; raises SendError otherwise."""
     with transaction.atomic():
+        with connection.cursor() as cur:  # one limit check + reservation at a time, so two sends cannot both fit under a limit only one fits
+            cur.execute("SELECT pg_advisory_xact_lock(%s)", [_SEND_LOCK])
         d = Draft.objects.select_for_update().get(pk=draft_id, user=user)  # DoesNotExist: someone else's or gone
         state = effective_state(d)
         if state == Draft.UNKNOWN:
@@ -347,16 +373,16 @@ def send(user, draft_id, expected_hash, region, request=None):
             raise SendError(p.errors[0])
         if content_hash(p) != expected_hash:
             raise SendError("The message changed after you previewed it. Preview it again before sending.")
-        check_limits(user.email, len(p.recipients))
-        d.state = Draft.SENDING
-        d.save(update_fields=["state", "updated_at"])  # the row lock is released at the end of this block; the state keeps a second send out
+        check_limits(user.email, len(p.recipients), from_address=p.from_address)
+        d.state, d.reserved = Draft.SENDING, len(p.recipients)
+        d.save(update_fields=["state", "reserved", "updated_at"])  # locks are released at the end of this block; the state and the reservation stay
 
     detail = {"from": p.from_address, "recipients": len(p.recipients), "subject": p.subject[:100]}
     rid = f"{user.pk}-{int(timezone.now().timestamp())}"
     try:
         sender = aws.assume_sender(region, user.email, rid)  # nothing can have been sent yet: any failure here is a clean "no"
     except Exception as exc:  # noqa: BLE001
-        Draft.objects.filter(pk=d.pk).update(state=Draft.DRAFT)
+        Draft.objects.filter(pk=d.pk).update(state=Draft.DRAFT, reserved=0)
         code = exc.response["Error"]["Code"] if isinstance(exc, ClientError) else exc.__class__.__name__
         record("compose.send_failed", actor=user.email, request=request, details={**detail, "stage": "assume-role", "error": code})
         raise SendError(_friendly(code) if isinstance(exc, ClientError) else "Could not reach AWS to prepare the send. Nothing was sent.") from None
@@ -365,7 +391,7 @@ def send(user, draft_id, expected_hash, region, request=None):
                                  text=p.text, html=render_html(p.text), config_set=settings.SEND_CONFIG_SET)
     except ClientError as exc:  # AWS answered, and the answer is no
         code = exc.response["Error"]["Code"]
-        Draft.objects.filter(pk=d.pk).update(state=Draft.DRAFT)
+        Draft.objects.filter(pk=d.pk).update(state=Draft.DRAFT, reserved=0)
         record("compose.send_failed", actor=user.email, request=request, details={**detail, "stage": "send", "error": code})
         raise SendError(_friendly(code)) from None
     except Exception as exc:  # noqa: BLE001: timeout or dropped connection: the mail may or may not have gone out
