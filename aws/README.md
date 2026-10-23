@@ -284,7 +284,9 @@ found inside a display name, never the envelope sender), is stored with every re
 report can never take the slot of the genuine one). List the providers you recognise in `MC_DMARC_SENDERS`: their reports are
 *verified*. An entry is either a **domain** (exactly that domain; its subdomains are *not* trusted, list them if you need them) or
 a **full address** (exactly that address). Where a domain is shared by many people (a consumer mail domain, or any domain that gives
-out addresses or subdomains), list the provider's exact address and never the domain. Reports from any other authenticated sender are
+out addresses or subdomains), list the provider's exact address and never the domain. An address entry narrows trust to one mailbox, but be clear about what it
+rests on: SES's DMARC check proves the *domain* of the From address, not the mailbox, so the entry is only as strong as that
+domain's own control over who may use which From address. It does not make a domain you do not operate trustworthy. Reports from any other authenticated sender are
 still stored and counted, but labelled *unverified* (like uploads), and a verified copy of the same report replaces them. The DMARC
 page lists the unlisted senders it has seen so you can decide which to add. The console does not compare the sender with the
 organisation named inside the report, because providers name themselves inconsistently.

@@ -546,6 +546,7 @@ def test_another_user_of_a_shared_domain_cannot_take_the_slot_of_the_trusted_add
     (["a@x.example, b@y.example"], ""), (["a@x.example", "b@y.example"], ""),           # more than one mailbox
     (["Group: a@x.example;"], ""), (["not an address"], ""), (['"a@good.example"'], ""), ([""], ""), ([], ""), (None, ""), ([5], ""),
     (["x" * 1000 + "@evil.example"], ""),
+    ([("a" * 60) + "@" + ".".join(["b" * 60] * 4) + ".example"], ""),            # over 254 characters in total: would overflow the stored columns
     (['"a b"@x.example'], ""), (["x@localhost"], ""), (["é@x.example"], ""), (["x@y_z.example"], ""),   # parse as a mailbox, but not a plain address
 ])
 def test_the_sender_is_the_one_plain_mailbox_in_the_header_from_never_an_address_hidden_in_a_display_name(header, expected):
@@ -714,4 +715,31 @@ def test_each_sender_address_has_its_own_allowance_even_on_a_shared_domain(setti
     run(one_report(rid="u"), mid="u", frm="some-user@shared.example", senders=senders)
     with pytest.raises(dmarc_mail.OverLimit):
         run(one_report(rid="u2"), mid="u2", frm="some-user@shared.example", senders=senders)
+    assert run(one_report(rid="g"), mid="g", frm="dmarchelp@shared.example", senders=senders)[0].outcome == "accepted"
+
+
+def test_an_address_of_the_longest_valid_length_is_accepted_and_one_more_character_is_not():
+    ok = "a" * 6 + "@" + ".".join(["b" * 60] * 4) + ".com"                     # exactly 254
+    assert len(ok) == 254
+    assert dmarc_mail.read_notice(notification(from_header=[ok]), [TOPIC], now=NOW).from_addr == ok
+    assert dmarc_mail.read_notice(notification(from_header=["x" + ok]), [TOPIC], now=NOW).from_addr == ""
+
+
+def test_a_domain_handing_out_many_addresses_does_not_get_a_fresh_allowance_per_address(settings):
+    settings.DMARC_MAX_PER_SENDER = 2
+    for i in range(2):
+        for j in range(1):
+            run(one_report(rid=f"r{i}"), mid=f"m{i}", frm=f"user{i}@many.example", senders=[])
+    # two addresses used, one mail each: the domain total is 2 = the allowance, so a third address is held back
+    with pytest.raises(dmarc_mail.OverLimit):
+        run(one_report(rid="r9"), mid="m9", frm="user9@many.example", senders=[])
+    assert run(one_report(rid="o"), mid="o", frm="x@other.example", senders=[])[0].outcome == "accepted"
+
+
+def test_a_listed_address_is_exempt_from_the_domain_allowance_of_its_unlisted_neighbours(settings):
+    settings.DMARC_MAX_PER_SENDER = 1
+    senders = ["dmarchelp@shared.example"]
+    run(one_report(rid="u"), mid="u", frm="some-user@shared.example", senders=senders)
+    with pytest.raises(dmarc_mail.OverLimit):
+        run(one_report(rid="u2"), mid="u2", frm="other-user@shared.example", senders=senders)      # the neighbours share one allowance
     assert run(one_report(rid="g"), mid="g", frm="dmarchelp@shared.example", senders=senders)[0].outcome == "accepted"

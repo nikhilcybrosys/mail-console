@@ -45,6 +45,7 @@ MAX_OBJECT_BYTES = 5 * 1024 * 1024   # the whole raw mail; real reports are a fe
 MAX_PARTS = 10
 MAX_ATTACHMENTS = 3
 KEEP_DAYS = 90
+MAX_ADDR = 254                      # the longest valid mail address; also keeps every stored value inside its column
 UNAUTHENTICATED_MAX_PER_DAY = 500   # log lines for mail that failed the notification checks (cheap: nothing is fetched or parsed)
 _KEY_TAIL = re.compile(r"[A-Za-z0-9._-]{1,200}")
 _ID = re.compile(r"[A-Za-z0-9._=+-]{1,200}")
@@ -108,7 +109,7 @@ def _sender(common):
     if header.defects or len(header.addresses) != 1 or len(header.groups) != 1 or header.groups[0].display_name is not None:
         return ""
     addr = header.addresses[0].addr_spec
-    return addr.lower() if _ADDR.fullmatch(addr) else ""
+    return addr.lower() if len(addr) <= MAX_ADDR and _ADDR.fullmatch(addr) else ""
 
 
 def read_notice(body, topics, now=None):
@@ -195,7 +196,11 @@ def _domain(addr):
 
 def is_listed(addr, senders):
     """Is this authenticated sender on the operator's list? An entry is a domain (exactly that domain, not its subdomains) or a
-    full address (exactly that address). Entries are matched whole, never as suffixes or patterns."""
+    full address (exactly that address). Entries are matched whole, never as suffixes or patterns.
+
+    Limit, stated plainly: SES's DMARC check proves the DOMAIN of the From address, not the mailbox. An address entry narrows trust
+    to one mailbox, which is strictly less than trusting the whole domain, but it is only as strong as that domain's own control
+    over who may use which From address. It does not make a domain you do not operate trustworthy."""
     return bool(addr) and any(e in (addr, _domain(addr)) for e in senders)
 
 
@@ -244,6 +249,10 @@ def process(n, fetch, *, now=None, allowed=None, address=None, bucket=None, pref
         _over(now, "listed", f"the daily allowance of {settings.DMARC_MAX_PER_DAY} mails from your listed providers is used up")
     if not trusted and pool.exclude(_listed_q(senders)).count() >= settings.DMARC_UNLISTED_MAX_PER_DAY:
         _over(now, "unlisted", f"the daily allowance of {settings.DMARC_UNLISTED_MAX_PER_DAY} mails from senders that are not on your list is used up")
+    if not trusted and pool.filter(sender_domain=domain).exclude(_listed_q(senders)).count() >= settings.DMARC_MAX_PER_SENDER:
+        # One domain that hands out many addresses must not get a fresh allowance per address (the unlisted pool alone would be
+        # the only brake). Listed addresses are exempt, so an unlisted neighbour on a shared domain cannot use up theirs.
+        _over(now, "domain-" + re.sub(r"[^a-z0-9.-]", "", domain)[:80], f"{domain} has used its daily allowance of {settings.DMARC_MAX_PER_SENDER} mails from unlisted addresses")
     if pool.filter(from_addr=n.from_addr).count() >= settings.DMARC_MAX_PER_SENDER:
         _over(now, "sender-" + re.sub(r"[^a-z0-9.@_%+-]", "", n.from_addr)[:80], f"{n.from_addr} has used its daily allowance of {settings.DMARC_MAX_PER_SENDER} mails")
     # 3. The message itself.
