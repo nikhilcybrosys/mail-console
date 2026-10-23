@@ -242,6 +242,10 @@ for _kind in ("bounce", "complaint"):
         raise ImproperlyConfigured(f"MC_ALERT_{_kind.upper()}_WARN must be above 0 and below MC_ALERT_{_kind.upper()}_PAGE, and both at most 1 (fractions, 0.02 = 2%).")
 if not 0 < ALERT_THRESHOLDS["quota_warn"] <= 1:
     raise ImproperlyConfigured("MC_ALERT_QUOTA_WARN must be above 0 and at most 1.")
+# SES list price per 1,000 emails (each recipient counts as one). Used only for the spend ESTIMATE on the overview.
+SES_PRICE_PER_1000 = env_float("MC_SES_PRICE_PER_1000", 0.10)
+if not 0 <= SES_PRICE_PER_1000 <= 100:
+    raise ImproperlyConfigured("MC_SES_PRICE_PER_1000 must be between 0 and 100 (US dollars per 1,000 emails).")
 ALERT_MIN_SAMPLE = int(env_float("MC_ALERT_MIN_SAMPLE", 200))          # no account-wide rate alert below this many sends in 24h
 ALERT_APP_MIN_SAMPLE = int(env_float("MC_ALERT_APP_MIN_SAMPLE", 50))   # ... and none for one sender app below this many
 # "No events" alert: wait this long, but at least as long as GAP_FACTOR times the usual gap between sends (capped), so a

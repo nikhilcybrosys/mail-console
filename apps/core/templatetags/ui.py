@@ -89,6 +89,18 @@ def compact(n):
 
 
 @register.filter
+def usd(value):
+    """US dollars for an ESTIMATE: tiny amounts keep four decimals so they do not all read as $0.00."""
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return "-"
+    if v == 0:
+        return "$0.00"
+    return f"${v:.4f}" if v < 0.01 else f"${v:,.2f}"
+
+
+@register.filter
 def pct(fraction, digits=2):
     try:
         return f"{float(fraction) * 100:.{int(digits)}f}%"

@@ -75,9 +75,13 @@ def top_bounce_reasons(hours=168, limit=8, now=None):
     return [{"type": r["payload__bounce__bounceType"], "subtype": r["payload__bounce__bounceSubType"], "count": r["n"]} for r in rows]
 
 
-def by_app(hours=168, now=None):
+def by_app(hours=168, now=None, scope_domains=None):
+    """Busiest sender apps. A scoped user sees only apps (and domains) of their own From-domains, as on the message list."""
     now = now or timezone.now()
-    return list(Message.objects.filter(sent_at__gte=now - timedelta(hours=hours)).values("source_app", "from_domain")
+    qs = Message.objects.filter(sent_at__gte=now - timedelta(hours=hours))
+    if scope_domains:
+        qs = qs.filter(from_domain__in=[d.lower() for d in scope_domains])
+    return list(qs.values("source_app", "from_domain")
                 .annotate(n=Count("id"), bad=Count("id", filter=Q(final_state__in=["bounce", "complaint"]))).order_by("-n")[:10])
 
 
@@ -238,3 +242,28 @@ def by_provider(hours=24, now=None, scope_domains=None, top=5):
     providers = sorted((_row(name, *t) for name, t in totals.items()), key=lambda x: (-x["sent"], order.index(x["name"])))
     domains.sort(key=lambda d: (-(d["bounced"] + d["complained"]), -d["sent"], d["name"]))
     return {"providers": providers, "domains": domains[:top]}
+
+
+# ---------------------------------------------------------------- spend estimate
+def cost_by_app(since, now=None, scope_domains=None, top=8):
+    """An ESTIMATE of SES message charges from `since`: every recipient is one billable email at SES_PRICE_PER_1000.
+
+    Not included, because the console cannot know them: data charges for attachments, any free tier, Virtual Deliverability
+    Manager, dedicated IPs, and mail sent outside the console's view. Returns the total and the busiest apps.
+    """
+    now = now or timezone.now()
+    qs = MessageRecipient.objects.filter(message__sent_at__gte=since, message__sent_at__lte=now)
+    if scope_domains:
+        qs = qs.filter(message__from_domain__in=[d.lower() for d in scope_domains])
+    rows = qs.values("message__source_app").annotate(n=Count("id")).order_by("-n")
+    price = settings.SES_PRICE_PER_1000 / 1000
+    apps, total = [], 0
+    for r in rows:
+        apps.append({"app": r["message__source_app"] or "(untagged)", "recipients": r["n"], "cost": r["n"] * price})
+        total += r["n"]
+    return {"recipients": total, "cost": total * price, "apps": apps[:top], "more": max(len(apps) - top, 0)}
+
+
+def month_start(now=None):
+    now = now or timezone.now()
+    return now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
