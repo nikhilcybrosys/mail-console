@@ -42,9 +42,12 @@ class InboundAttachment(models.Model):
 class DmarcReport(models.Model):
     # A report either came from the inbox (message set) or was uploaded by a person (message empty, uploaded_by set).
     message = models.ForeignKey(InboundMessage, on_delete=models.CASCADE, related_name="dmarc_reports", null=True, blank=True)
-    # "inbox": received at the address SES receives for (authenticated by the receiving path). "upload": added by hand, taken at
-    # face value; the sha256 of the original file lets anyone compare it with the attachment later.
+    # "inbox": received by mail from a sender on the operator's list of reporting providers (the sender was authenticated by SES's
+    # DMARC check). "mail": received by mail from an authenticated sender that is NOT on that list (the identity of the reporter is
+    # unchecked). "upload": added by hand. The last two are taken at face value; the sha256 of the original file lets anyone
+    # compare it with the attachment later.
     source = models.CharField(max_length=10, default="inbox")
+    sender = models.CharField(max_length=320, blank=True)  # for mailed reports: the authenticated From address; part of the uniqueness key
     file_sha256 = models.CharField(max_length=64, blank=True)
     uploaded_by = models.CharField(max_length=254, blank=True)
     uploaded_at = models.DateTimeField(null=True, blank=True)
@@ -59,5 +62,27 @@ class DmarcReport(models.Model):
     fail_count = models.PositiveIntegerField(default=0)
 
     class Meta:
-        # Per source, so an uploaded (unverified) report can never occupy the slot of the genuine one when it arrives by mail.
-        constraints = [models.UniqueConstraint(fields=["source", "org_name", "report_id"], name="uniq_dmarc_report")]
+        # Per source AND sender address, so neither an uploaded report nor a forged mailed one (another sender claiming the same reporter
+        # name and id) can occupy the slot of the genuine report.
+        constraints = [models.UniqueConstraint(fields=["source", "sender", "org_name", "report_id"], name="uniq_dmarc_report")]
+
+
+class DmarcMail(models.Model):
+    """One line per mail that arrived at the reports address: what happened to it. Not the mail itself (that is in S3 for a few days).
+
+    `ses_message_id` is unique, which makes a redelivered queue message harmless. Rows are pruned after 90 days.
+    """
+
+    ses_message_id = models.CharField(max_length=200, unique=True)
+    received_at = models.DateTimeField(db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    from_addr = models.CharField(max_length=320, blank=True)
+    # The From domain, but ONLY once SES's DMARC check passed (before that the From is unauthenticated and could name anyone,
+    # so it must not count against anyone's allowance). Blank for mail that failed the notification checks.
+    sender_domain = models.CharField(max_length=255, blank=True, db_index=True)
+    outcome = models.CharField(max_length=10)  # accepted | duplicate | refused
+    reason = models.CharField(max_length=300, blank=True)
+    reports = models.PositiveSmallIntegerField(default=0)
+
+    class Meta:
+        ordering = ["-received_at"]

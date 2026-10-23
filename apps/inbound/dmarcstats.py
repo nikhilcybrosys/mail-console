@@ -7,7 +7,7 @@ from datetime import timedelta
 from django.db.models import Exists, OuterRef
 from django.utils import timezone
 
-from .models import DmarcReport
+from .models import DmarcMail, DmarcReport
 
 PERIODS = (7, 30, 90)
 MIN_MESSAGES = 100
@@ -17,10 +17,10 @@ TOP_SOURCES = 25
 
 
 def _recent(days, now=None):
-    """Reports in the period. A report that was both uploaded and received by mail is counted once, as the mail copy."""
+    """Reports in the period. A report that is also present as a verified mail copy is counted once, as that copy."""
     now = now or timezone.now()
     twin = DmarcReport.objects.filter(source="inbox", org_name=OuterRef("org_name"), report_id=OuterRef("report_id"))
-    return DmarcReport.objects.filter(end__gte=now - timedelta(days=days)).exclude(Exists(twin), source="upload")
+    return DmarcReport.objects.filter(end__gte=now - timedelta(days=days)).exclude(Exists(twin), source__in=("upload", "mail"))
 
 
 def days_covered(reports):
@@ -57,13 +57,16 @@ def overview(days=30, now=None):
         latest = rs.order_by("-end").first()
         covered = days_covered(rs)
         state, text = readiness(latest.policy, ok + bad, bad, covered)
-        uploaded = rs.filter(source="upload").count()
+        uploaded, unlisted = rs.filter(source="upload").count(), rs.filter(source="mail").count()
         if uploaded and state in ("ready", "not_ready"):
             text += (f" Note: {uploaded} of these {rs.count()} reports were uploaded by hand and are taken at face value; the console cannot verify"
                      " they came from the provider.")
+        if unlisted and state in ("ready", "not_ready"):
+            text += (f" Note: {unlisted} of these {rs.count()} reports came by mail from senders you have not listed as reporting providers, so"
+                     " the console cannot tell they are genuine.")
         out.append({"domain": domain, "policy": latest.policy, "reports": rs.count(), "passed": ok, "failed": bad, "total": ok + bad,
                     "pass_rate": (ok / (ok + bad)) if ok + bad else 0.0, "days": covered, "state": state, "advice": text,
-                    "providers": sorted(set(rs.values_list("org_name", flat=True))), "uploaded": uploaded})
+                    "providers": sorted(set(rs.values_list("org_name", flat=True))), "uploaded": uploaded, "unlisted": unlisted})
     return out
 
 
@@ -96,3 +99,20 @@ def recent_reports(domain=None, limit=25, days=None, now=None):
     if domain:
         qs = qs.filter(domain=domain)
     return list(qs[:limit])
+
+
+COLLECTION_DAYS = 7
+SILENT_AFTER = timedelta(hours=72)
+
+
+def collection(enabled, now=None):
+    """The "Collection" card: is mail delivery of reports working, and what was turned away? None when there is nothing to show."""
+    now = now or timezone.now()
+    week = DmarcMail.objects.filter(created_at__gte=now - timedelta(days=COLLECTION_DAYS))
+    if not enabled and not DmarcMail.objects.exists():
+        return None
+    last = DmarcMail.objects.exclude(outcome="refused").order_by("-received_at").values_list("received_at", flat=True).first()
+    counts = {o: week.filter(outcome=o).count() for o in ("accepted", "duplicate", "refused")}
+    unlisted = sorted(set(DmarcReport.objects.filter(source="mail", end__gte=now - timedelta(days=30)).values_list("sender", flat=True)))
+    return {"enabled": enabled, "last": last, "silent": bool(enabled and last and now - last > SILENT_AFTER), **counts,
+            "refusals": list(week.filter(outcome="refused").order_by("-received_at")[:10]), "unlisted_senders": unlisted}

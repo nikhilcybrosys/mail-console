@@ -32,6 +32,10 @@ never run for real.
 - **People, cost and DMARC (tested; verified in a real browser):** adding people from the console (passkey, audited), an
   estimated SES cost per app (a floor, not a bill), and DMARC report upload with a per-domain viewer that says whether it
   looks safe to tighten the policy (uploads are validated strictly and labelled unverified).
+- **DMARC reports by mail (built and tested locally, NOT applied or deployed):** a worker, a collection card, a setup check, an
+  alert and opt-in AWS files (`aws/README.md` section 9) that receive the reports at a reports address through SES, S3, SNS and
+  SQS. Nothing exists in AWS or DNS for it yet, and it has not run against a real SES notification: the receipt-rule policy
+  conditions and the exact notification fields are taken from the AWS documentation and must be proved with one real test mail.
 - **Domain scope (tested):** narrows what a limited person sees (messages, DNS, alerts, suppression list, overview tables). It is
   not a tenant boundary; the README lists what it does not cover.
 - **Inbound (tested):** HTML sanitizer, secret redaction, a cookie-less renderer on a separate origin, a DMARC report parser,

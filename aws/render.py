@@ -27,9 +27,19 @@ CHECKS = {
     "__EXTERNAL_ID__": (r"[A-Za-z0-9+=,.@:/_-]{24,256}", "a secret of 24 to 256 letters, digits or + = , . @ : / _ -"),
     "__SERVICE_PRINCIPAL__": (r"[a-z0-9-]+\.amazonaws\.com", "the AWS service that runs the console, such as ec2.amazonaws.com or ecs-tasks.amazonaws.com"),
 }
+DMARC_CHECKS = {
+    "__DMARC_QUEUE_ARN__": (r"arn:aws:sqs:[a-z0-9-]+:\d{12}:[A-Za-z0-9_-]+", "an SQS queue ARN"),
+    "__DMARC_TOPIC_ARN__": (r"arn:aws:sns:[a-z0-9-]+:\d{12}:[A-Za-z0-9_-]+", "an SNS topic ARN"),
+    "__DMARC_BUCKET__": (r"[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]", "an S3 bucket name"),
+    "__DMARC_PREFIX__": (r"[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*/", "a folder-style prefix ending in /, such as dmarc/"),
+    "__DMARC_RULE_SET__": (r"[A-Za-z0-9_-]{1,64}", "a receipt rule set name (letters, digits, _ and -)"),
+    "__DMARC_RULE__": (r"[A-Za-z0-9_-]{1,64}", "a receipt rule name (letters, digits, _ and -)"),
+}
 APP_ROLE_NAME = "mail-console-app"
 # Compose is opt-in: these four files are only produced when --send-email and --send-from are given.
 SEND_FILES = {"send.json", "permissions-boundary-send.json", "trust-send-role.json", "app-assume-send.json"}
+# DMARC collection by mail is opt-in too: these files are only produced when the --dmarc-* options are given.
+DMARC_FILES = {"dmarc-inbound.json", "dmarc-queue-policy.json", "dmarc-topic-policy.json", "dmarc-bucket-policy.json", "permissions-boundary-dmarc.json"}
 LIST_TOKENS = ("__ALLOWED_EMAILS__", "__SEND_EMAILS__", "__SEND_FROM__", "__SEND_RESOURCES__")
 CONFIG_SET = re.compile(r"[A-Za-z0-9_-]{1,64}")
 EMAIL = re.compile(r"[a-z0-9._%+-]{1,40}@([a-z0-9-]+\.)+[a-z]{2,}")  # exact, lowercase, no wildcards: SourceIdentity is matched exactly
@@ -94,6 +104,19 @@ def build_values(args):
                     names.append(n)
         values["__SEND_RESOURCES__"] = [f"arn:aws:ses:{args.region}:{args.account_id}:identity/{n}" for n in names] + \
             [f"arn:aws:ses:{args.region}:{args.account_id}:configuration-set/{config_set}"]
+    dmarc = {"__DMARC_QUEUE_ARN__": getattr(args, "dmarc_queue_arn", ""), "__DMARC_TOPIC_ARN__": getattr(args, "dmarc_topic_arn", ""),
+             "__DMARC_BUCKET__": getattr(args, "dmarc_bucket", "")}
+    if any(dmarc.values()) and not all(dmarc.values()):
+        raise SystemExit("DMARC collection needs --dmarc-queue-arn, --dmarc-topic-arn and --dmarc-bucket together, or none of them")
+    if all(dmarc.values()):
+        dmarc.update({"__DMARC_PREFIX__": getattr(args, "dmarc_prefix", "") or "dmarc/", "__DMARC_RULE_SET__": getattr(args, "dmarc_rule_set", "") or "mail-console-dmarc",
+                      "__DMARC_RULE__": getattr(args, "dmarc_rule", "") or "dmarc-reports"})
+        for token, value in dmarc.items():
+            if not re.fullmatch(DMARC_CHECKS[token][0], value):
+                raise SystemExit(f"{token}: {value!r} is not {DMARC_CHECKS[token][1]}")
+        if ".." in dmarc["__DMARC_PREFIX__"]:
+            raise SystemExit("--dmarc-prefix must not contain ..")
+        values.update(dmarc)
     values["__APP_ROLE_ARN__"] = f"arn:aws:iam::{values['__ACCOUNT_ID__']}:role/{APP_ROLE_NAME}"
     return values
 
@@ -104,6 +127,8 @@ def render(values):
     for path in sorted(POLICY_DIR.glob("*.json")):
         if path.name in SEND_FILES and "__SEND_FROM__" not in values:
             continue  # Compose not requested: nothing about sending is rendered
+        if path.name in DMARC_FILES and "__DMARC_QUEUE_ARN__" not in values:
+            continue  # DMARC collection not requested: nothing about it is rendered
         text = path.read_text()
         for token, value in values.items():
             if token in LIST_TOKENS:  # a JSON array, substituted for the whole quoted token
@@ -117,6 +142,8 @@ def render(values):
         out[path.name] = text
     # `aws sqs set-queue-attributes` wants the policy as a JSON *string* inside an attributes map.
     out["sqs-queue-attributes.json"] = json.dumps({"Policy": json.dumps(json.loads(out["sqs-queue-policy.json"]))}, indent=2) + "\n"
+    if "dmarc-queue-policy.json" in out:
+        out["dmarc-queue-attributes.json"] = json.dumps({"Policy": json.dumps(json.loads(out["dmarc-queue-policy.json"]))}, indent=2) + "\n"
     return out
 
 
@@ -128,6 +155,12 @@ def main(argv=None):
     ap.add_argument("--send-email", action="append", default=[], help="Compose (optional): an e-mail address allowed to send mail through the console (repeat)")
     ap.add_argument("--send-from", action="append", default=[], help="Compose (optional): an address the console may send as, exactly (repeat)")
     ap.add_argument("--send-config-set", default="", help="Compose (optional): the single configuration set its mail goes through")
+    ap.add_argument("--dmarc-queue-arn", default="", help="DMARC by mail (optional): the queue that receives the report notifications")
+    ap.add_argument("--dmarc-topic-arn", default="", help="DMARC by mail (optional): the SNS topic the SES receipt rule publishes to")
+    ap.add_argument("--dmarc-bucket", default="", help="DMARC by mail (optional): the S3 bucket SES stores the raw report mail in")
+    ap.add_argument("--dmarc-prefix", default="", help="folder inside that bucket (default dmarc/)")
+    ap.add_argument("--dmarc-rule-set", default="", help="SES receipt rule set name (default mail-console-dmarc)")
+    ap.add_argument("--dmarc-rule", default="", help="SES receipt rule name (default dmarc-reports)")
     ap.add_argument("--topic-arn", required=True)
     ap.add_argument("--queue-arn", required=True)
     ap.add_argument("--service-principal", required=True)

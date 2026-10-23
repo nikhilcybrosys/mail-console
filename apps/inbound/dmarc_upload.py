@@ -94,6 +94,32 @@ def clean_report(parsed, now=None):
             "rows": rows, "pass_count": ok, "fail_count": bad}
 
 
+def store_report(raw, name, *, source, allowed, now, uploader="", sender=""):
+    """Validate one report file's bytes and store it. Returns a Result; never raises for bad input.
+
+    `source` is "upload" (added by hand), "inbox" (mail from a sender on the operator's list of reporting providers) or "mail"
+    (mail from some other sender that passed SES's DMARC check); the last two carry the authenticated `sender` address.
+    """
+    try:
+        cleaned = clean_report(dmarc.parse(dmarc.unpack(raw, name)), now)
+    except dmarc.DmarcError as exc:
+        # The parser's "unparseable report: <ExceptionName>" is for logs; people get a plain sentence.
+        why = "the file is not a valid DMARC aggregate report" if str(exc).startswith("unparseable") else str(exc)
+        return Result(name, "error", why)
+    except Exception as exc:  # noqa: BLE001: bad zip/gzip data, odd XML values: say "unreadable", log only the kind
+        log.warning("dmarc %s: unreadable file (%s)", source, type(exc).__name__)
+        return Result(name, "error", "the file could not be read as a DMARC report (xml, gz or zip)")
+    if not domain_ok(cleaned["domain"], allowed):
+        return Result(name, "error", f"{cleaned['domain']} is not one of the domains this console watches", cleaned["domain"])
+    extra = {"uploaded_by": uploader, "uploaded_at": now} if source == "upload" else {}
+    try:
+        with transaction.atomic():
+            DmarcReport.objects.create(source=source, sender=sender, file_sha256=hashlib.sha256(raw).hexdigest(), **extra, **cleaned)
+    except IntegrityError:
+        return Result(name, "duplicate", "already added", cleaned["domain"])
+    return Result(name, "added", f"{cleaned['pass_count'] + cleaned['fail_count']} messages from {cleaned['org_name']}", cleaned["domain"])
+
+
 def ingest(files, uploader, *, allowed=None, now=None):
     """Process uploaded files one by one; one bad file never stops the others. Returns a list of Result."""
     now = now or timezone.now()
@@ -104,28 +130,9 @@ def ingest(files, uploader, *, allowed=None, now=None):
         if f.size > MAX_FILE_BYTES:
             results.append(Result(name, "error", f"larger than {MAX_FILE_BYTES // 1024 // 1024} MB"))
             continue
-        try:
-            raw = f.read(MAX_FILE_BYTES + 1)
-            if len(raw) > MAX_FILE_BYTES:
-                raise dmarc.DmarcError("file is too large")
-            cleaned = clean_report(dmarc.parse(dmarc.unpack(raw, name)), now)
-        except dmarc.DmarcError as exc:
-            # The parser's "unparseable report: <ExceptionName>" is for logs; people get a plain sentence.
-            why = "the file is not a valid DMARC aggregate report" if str(exc).startswith("unparseable") else str(exc)
-            results.append(Result(name, "error", why))
+        raw = f.read(MAX_FILE_BYTES + 1)
+        if len(raw) > MAX_FILE_BYTES:
+            results.append(Result(name, "error", "file is too large"))
             continue
-        except Exception as exc:  # noqa: BLE001: bad zip/gzip data, odd XML values: say "unreadable", log only the kind
-            log.warning("dmarc upload: unreadable file (%s)", type(exc).__name__)
-            results.append(Result(name, "error", "the file could not be read as a DMARC report (xml, gz or zip)"))
-            continue
-        if not domain_ok(cleaned["domain"], allowed):
-            results.append(Result(name, "error", f"{cleaned['domain']} is not one of the domains this console watches", cleaned["domain"]))
-            continue
-        try:
-            with transaction.atomic():
-                DmarcReport.objects.create(source="upload", file_sha256=hashlib.sha256(raw).hexdigest(), uploaded_by=uploader, uploaded_at=now, **cleaned)
-        except IntegrityError:
-            results.append(Result(name, "duplicate", "already added", cleaned["domain"]))
-            continue
-        results.append(Result(name, "added", f"{cleaned['pass_count'] + cleaned['fail_count']} messages from {cleaned['org_name']}", cleaned["domain"]))
+        results.append(store_report(raw, name, source="upload", allowed=allowed, now=now, uploader=uploader))
     return results

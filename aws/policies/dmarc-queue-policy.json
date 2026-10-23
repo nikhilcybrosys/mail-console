@@ -1,0 +1,19 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "OnlyTheDmarcTopicMayDeliver",
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "sns.amazonaws.com"
+      },
+      "Action": "sqs:SendMessage",
+      "Resource": "__DMARC_QUEUE_ARN__",
+      "Condition": {
+        "ArnEquals": {
+          "aws:SourceArn": "__DMARC_TOPIC_ARN__"
+        }
+      }
+    }
+  ]
+}

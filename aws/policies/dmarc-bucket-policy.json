@@ -1,0 +1,37 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "OnlyTheDmarcReceiptRuleMayStoreMail",
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "ses.amazonaws.com"
+      },
+      "Action": "s3:PutObject",
+      "Resource": "arn:aws:s3:::__DMARC_BUCKET__/__DMARC_PREFIX__*",
+      "Condition": {
+        "StringEquals": {
+          "AWS:SourceAccount": "__ACCOUNT_ID__"
+        },
+        "ArnEquals": {
+          "AWS:SourceArn": "arn:aws:ses:__REGION__:__ACCOUNT_ID__:receipt-rule-set/__DMARC_RULE_SET__:receipt-rule/__DMARC_RULE__"
+        }
+      }
+    },
+    {
+      "Sid": "TlsOnly",
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": "s3:*",
+      "Resource": [
+        "arn:aws:s3:::__DMARC_BUCKET__",
+        "arn:aws:s3:::__DMARC_BUCKET__/*"
+      ],
+      "Condition": {
+        "Bool": {
+          "aws:SecureTransport": "false"
+        }
+      }
+    }
+  ]
+}

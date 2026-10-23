@@ -1,0 +1,40 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "OwnerAccountAdministersTheTopic",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::__ACCOUNT_ID__:root"
+      },
+      "Action": [
+        "sns:Publish",
+        "sns:Subscribe",
+        "sns:GetTopicAttributes",
+        "sns:SetTopicAttributes",
+        "sns:ListSubscriptionsByTopic",
+        "sns:AddPermission",
+        "sns:RemovePermission",
+        "sns:DeleteTopic"
+      ],
+      "Resource": "__DMARC_TOPIC_ARN__"
+    },
+    {
+      "Sid": "OnlyTheDmarcReceiptRuleMayPublish",
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "ses.amazonaws.com"
+      },
+      "Action": "sns:Publish",
+      "Resource": "__DMARC_TOPIC_ARN__",
+      "Condition": {
+        "StringEquals": {
+          "AWS:SourceAccount": "__ACCOUNT_ID__"
+        },
+        "ArnEquals": {
+          "aws:SourceArn": "arn:aws:ses:__REGION__:__ACCOUNT_ID__:receipt-rule-set/__DMARC_RULE_SET__:receipt-rule/__DMARC_RULE__"
+        }
+      }
+    }
+  ]
+}
