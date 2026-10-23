@@ -29,10 +29,10 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 def notification(mid="msg0001", recipients=(ADDR,), virus="PASS", spam="PASS", dmarc="PASS", dkim="PASS", spf="PASS", bucket=BUCKET, key=None,
-                 frm="noreply-dmarc-support@google.com", kind="Received", topic=TOPIC):
+                 frm="noreply-dmarc-support@google.com", kind="Received", topic=TOPIC, from_header=...):
     event = {"notificationType": kind,
              "mail": {"messageId": mid, "timestamp": "2026-10-20T11:00:00.000Z", "source": "bounce@mailer.example.net",
-                      "commonHeaders": {"from": [f"Google <{frm}>"]}},
+                      "commonHeaders": {"from": [f"Google <{frm}>"] if from_header is ... else from_header}},
              "receipt": {"timestamp": "2026-10-20T11:00:01.000Z", "recipients": list(recipients),
                          "virusVerdict": {"status": virus}, "spamVerdict": {"status": spam}, "dmarcVerdict": {"status": dmarc},
                          "dkimVerdict": {"status": dkim}, "spfVerdict": {"status": spf},
@@ -190,7 +190,7 @@ def test_an_accepted_mail_stores_the_report_as_received_by_mail_not_as_an_upload
     assert row.outcome == "accepted" and row.reports == 1 and row.from_addr == "noreply-dmarc-support@google.com"
     assert reads == [(BUCKET, "dmarc/msg0001")]
     r = DmarcReport.objects.get()
-    assert (r.source, r.sender_domain, r.uploaded_by, r.uploaded_at, r.message, r.pass_count) == ("inbox", "google.com", "", None, None, 40) and len(r.file_sha256) == 64
+    assert (r.source, r.sender, r.uploaded_by, r.uploaded_at, r.message, r.pass_count) == ("inbox", "noreply-dmarc-support@google.com", "", None, None, 40) and len(r.file_sha256) == 64
 
 
 def test_a_report_for_a_domain_the_console_does_not_watch_is_refused_with_the_reason():
@@ -505,18 +505,77 @@ def test_no_alert_when_collection_is_off(settings):
 
 
 # ---------------------------------------------------------------- who SENT it: listed providers, unlisted senders, forged slots
-def test_a_sender_on_the_list_is_verified_and_a_subdomain_of_it_too_but_a_look_alike_is_not():
-    assert dmarc_mail.is_listed("google.com", ["google.com"]) and dmarc_mail.is_listed("mail.google.com", ["google.com"])
-    for d in ("evilgoogle.com", "google.com.evil.org", "oogle.com", "", "com"):
-        assert not dmarc_mail.is_listed(d, ["google.com"]), d
-    assert not dmarc_mail.is_listed("google.com", [])
+def test_listing_a_domain_trusts_exactly_that_domain_and_listing_an_address_exactly_that_address():
+    assert dmarc_mail.is_listed("noreply@google.com", ["google.com"])
+    for addr in ("noreply@mail.google.com", "x@evilgoogle.com", "x@google.com.evil.org", "x@oogle.com", "", "x@com"):   # no subdomains, no suffixes
+        assert not dmarc_mail.is_listed(addr, ["google.com"]), addr
+    assert not dmarc_mail.is_listed("noreply@google.com", [])
+    assert dmarc_mail.is_listed("dmarchelp@shared.example", ["dmarchelp@shared.example"])
+    assert not dmarc_mail.is_listed("anyone@shared.example", ["dmarchelp@shared.example"])      # an address entry never trusts the whole domain
+    assert not dmarc_mail.is_listed("dmarchelp@shared.example", ["elp@shared.example"])         # and is not a suffix match either
+    assert not dmarc_mail.is_listed("dmarchelp@mail.shared.example", ["shared.example"])
+
+
+def test_a_subdomain_of_a_listed_domain_is_not_verified_unless_listed_itself():
+    row, _ = run(one_report(rid="sub"), frm="reports@mail.google.com")
+    assert row.outcome == "accepted" and DmarcReport.objects.get().source == "mail"
+    row, _ = run(one_report(rid="sub2"), mid="m2", frm="reports@mail.google.com", senders=["mail.google.com"])
+    assert DmarcReport.objects.get(report_id="sub2").source == "inbox"
+
+
+def test_a_shared_domain_can_be_trusted_by_address_without_trusting_everyone_on_it():
+    senders = ["dmarchelp@shared.example"]
+    assert run(one_report(rid="g"), mid="g", frm="dmarchelp@shared.example", senders=senders)[0].outcome == "accepted"
+    assert run(one_report(rid="u"), mid="u", frm="some-user@shared.example", senders=senders)[0].outcome == "accepted"
+    assert dict(DmarcReport.objects.values_list("report_id", "source")) == {"g": "inbox", "u": "mail"}
+
+
+def test_another_user_of_a_shared_domain_cannot_take_the_slot_of_the_trusted_address():
+    senders = ["dmarchelp@shared.example"]
+    run(one_report(rid="same"), mid="squat", frm="some-user@shared.example", senders=senders)
+    assert run(one_report(rid="same"), mid="real", frm="dmarchelp@shared.example", senders=senders)[0].outcome == "accepted"
+    assert sorted(DmarcReport.objects.values_list("source", "sender")) == [("inbox", "dmarchelp@shared.example"), ("mail", "some-user@shared.example")]
+
+
+# ---------------------------------------------------------------- the sender is parsed strictly, from the header From only
+@pytest.mark.parametrize("header, expected", [
+    (['"noreply-dmarc-support@google.com" <x@evil.example>'], "x@evil.example"),        # an address inside the display name is not the sender
+    (['Google <noreply-dmarc-support@google.com> (x@evil.example)'], "noreply-dmarc-support@google.com"),
+    (['X@Evil.Example'], "x@evil.example"),
+    (['"a@good.example, b@good.example" <x@evil.example>'], "x@evil.example"),
+    (["a@x.example, b@y.example"], ""), (["a@x.example", "b@y.example"], ""),           # more than one mailbox
+    (["Group: a@x.example;"], ""), (["not an address"], ""), (['"a@good.example"'], ""), ([""], ""), ([], ""), (None, ""), ([5], ""),
+    (["x" * 1000 + "@evil.example"], ""),
+    (['"a b"@x.example'], ""), (["x@localhost"], ""), (["é@x.example"], ""), (["x@y_z.example"], ""),   # parse as a mailbox, but not a plain address
+])
+def test_the_sender_is_the_one_plain_mailbox_in_the_header_from_never_an_address_hidden_in_a_display_name(header, expected):
+    n = dmarc_mail.read_notice(notification(from_header=header), [TOPIC], now=NOW)
+    assert n.from_addr == expected
+
+
+def test_a_display_name_naming_a_listed_provider_does_not_make_the_sender_verified():
+    """The review finding: a regex search over the header picked the first address-looking text, so an attacker with a
+    DMARC-aligned domain of their own could dress up as the listed provider."""
+    row, _ = run(one_report(rid="dress"), from_header=['"noreply-dmarc-support@google.com" <x@evil.example>'])
+    assert row.outcome == "accepted" and row.from_addr == "x@evil.example" and row.sender_domain == "evil.example"
+    assert DmarcReport.objects.get().source == "mail"
+
+
+def test_the_envelope_sender_is_never_a_fallback_for_who_sent_it():
+    row, reads = run(one_report(), from_header=None)          # no header From in the notification, but an envelope source is present
+    assert row.outcome == "refused" and "no single, plain sender address" in row.reason and not reads and row.sender_domain == ""
+
+
+def test_more_than_one_mailbox_in_the_from_header_is_refused_without_reading_s3():
+    row, reads = run(one_report(), from_header=["a@good.example, x@evil.example"])
+    assert row.outcome == "refused" and not reads
 
 
 def test_an_authenticated_sender_that_is_not_listed_is_stored_but_labelled_unverified():
     row, _ = run(one_report(rid="u1"), senders=[], frm="reports@new-provider.example")
     assert row.outcome == "accepted" and row.sender_domain == "new-provider.example"
     r = DmarcReport.objects.get()
-    assert (r.source, r.sender_domain) == ("mail", "new-provider.example")
+    assert (r.source, r.sender) == ("mail", "reports@new-provider.example")
 
 
 def test_a_forged_report_cannot_take_the_slot_of_the_genuine_one_and_the_genuine_one_replaces_it():
@@ -525,7 +584,7 @@ def test_a_forged_report_cannot_take_the_slot_of_the_genuine_one_and_the_genuine
     forged, _ = run(mail(("r.xml", xml(**kw, rows=[("203.0.113.9", 400, "fail", "fail", "none", "example.com")]), "text/xml")), mid="forged", frm="x@attacker.example")
     genuine, _ = run(mail(("r.xml", xml(**kw, rows=[("203.0.113.5", 50, "pass", "pass", "none", "example.com")]), "text/xml")), mid="real")
     assert (forged.outcome, genuine.outcome) == ("accepted", "accepted")                       # not "duplicate"
-    assert sorted(DmarcReport.objects.values_list("source", "sender_domain")) == [("inbox", "google.com"), ("mail", "attacker.example")]
+    assert sorted(DmarcReport.objects.values_list("source", "sender")) == [("inbox", "noreply-dmarc-support@google.com"), ("mail", "x@attacker.example")]
     (o,) = dmarcstats.overview(30)
     assert o["total"] == 50 and o["unlisted"] == 0 and o["failed"] == 0                         # only the verified copy counts
 
@@ -537,7 +596,7 @@ def test_unlisted_mail_is_counted_with_a_caveat_until_the_provider_is_listed():
         assert r.outcome == "accepted"
     (o,) = dmarcstats.overview(30)
     assert o["unlisted"] == 10 and o["state"] == "ready" and "senders you have not listed" in o["advice"] and "uploaded by hand" not in o["advice"]
-    assert dmarcstats.collection(True)["unlisted_senders"] == ["newco.example"]
+    assert dmarcstats.collection(True)["unlisted_senders"] == ["r@newco.example"]
 
 
 def test_the_page_labels_unlisted_senders_and_names_the_sender_of_verified_reports(settings):
@@ -549,14 +608,14 @@ def test_the_page_labels_unlisted_senders_and_names_the_sender_of_verified_repor
         run(mail(("r.xml", xml(rid=mid, org=mid), "text/xml")), mid=mid, frm=frm, senders=senders)
     c, _ = login(DELIVERABILITY_ADMIN, "d@example.com")
     html = c.get(reverse("dmarc")).content.decode()
-    assert "sender not on your list" in html and "newco.example" in html and "received by mail from google.com" in html and "MC_DMARC_SENDER_DOMAINS" in html
+    assert "sender not on your list" in html and "r@newco.example" in html and "received by mail from n@google.com" in html and "MC_DMARC_SENDERS" in html
 
 
 def test_the_setup_check_warns_until_providers_are_listed(settings):
-    settings.DMARC_SENDER_DOMAINS = []
+    settings.DMARC_SENDERS = []
     c, _ = checks(settings)
-    assert c["dsenders"].status == "warn" and "MC_DMARC_SENDER_DOMAINS" in c["dsenders"].fix
-    settings.DMARC_SENDER_DOMAINS = ["google.com", "yahoo.com"]
+    assert c["dsenders"].status == "warn" and "MC_DMARC_SENDERS" in c["dsenders"].fix
+    settings.DMARC_SENDERS = ["google.com", "yahoo.com"]
     c, _ = checks(settings)
     assert c["dsenders"].status == "ok" and "google.com, yahoo.com" in c["dsenders"].detail
 
@@ -619,16 +678,16 @@ def test_the_allowances_are_a_rolling_day_so_they_free_up(settings):
 
 
 def test_the_worker_keeps_a_message_when_an_allowance_is_used_up(dmarc_on, monkeypatch, settings):
-    settings.DMARC_MAX_PER_SENDER, settings.DMARC_SENDER_DOMAINS = 1, ["google.com"]
+    settings.DMARC_MAX_PER_SENDER, settings.DMARC_SENDERS = 1, ["google.com"]
     assert drain([notification(mid="w1"), notification(mid="w2")], raw=one_report(rid="w"), monkeypatch=monkeypatch) == ["h0"]
 
 
 def test_sender_domains_are_validated_at_start_up():
-    ok = _settings(**GOOD, MC_DMARC_SENDER_DOMAINS="google.com, yahoo.com")
+    ok = _settings(**GOOD, MC_DMARC_SENDERS="google.com, dmarchelp@shared.example")
     assert ok.stdout.strip() == "True"
-    for bad in ("*.google.com", "not a domain", "google", "https://google.com"):
-        proc = _settings(**GOOD, MC_DMARC_SENDER_DOMAINS=bad)
-        assert proc.returncode != 0 and "MC_DMARC_SENDER_DOMAINS" in proc.stderr
+    for bad in ("*.google.com", "not a domain", "google", "https://google.com", "*@google.com", "a@b@google.com"):
+        proc = _settings(**GOOD, MC_DMARC_SENDERS=bad)
+        assert proc.returncode != 0 and "MC_DMARC_SENDERS" in proc.stderr
 
 
 def test_the_migrations_match_the_models_so_the_database_has_the_constraints_the_code_assumes():
@@ -638,3 +697,21 @@ def test_the_migrations_match_the_models_so_the_database_has_the_constraints_the
         call_command("makemigrations", "--check", "--dry-run", stdout=out, stderr=out)
     except SystemExit:
         pytest.fail("models and migrations differ: " + out.getvalue())
+
+
+def test_an_unlisted_user_on_a_shared_domain_does_not_use_up_the_listed_addresss_allowance(settings):
+    settings.DMARC_MAX_PER_DAY, settings.DMARC_MAX_PER_SENDER = 1, 100
+    senders = ["dmarchelp@shared.example"]
+    run(one_report(rid="u"), mid="u", frm="some-user@shared.example", senders=senders)        # an unlisted address, same domain
+    assert run(one_report(rid="g"), mid="g", frm="dmarchelp@shared.example", senders=senders)[0].outcome == "accepted"
+    with pytest.raises(dmarc_mail.OverLimit):                                                  # the listed address's own pool still holds
+        run(one_report(rid="g2"), mid="g2", frm="dmarchelp@shared.example", senders=senders)
+
+
+def test_each_sender_address_has_its_own_allowance_even_on_a_shared_domain(settings):
+    settings.DMARC_MAX_PER_SENDER = 1
+    senders = ["dmarchelp@shared.example"]
+    run(one_report(rid="u"), mid="u", frm="some-user@shared.example", senders=senders)
+    with pytest.raises(dmarc_mail.OverLimit):
+        run(one_report(rid="u2"), mid="u2", frm="some-user@shared.example", senders=senders)
+    assert run(one_report(rid="g"), mid="g", frm="dmarchelp@shared.example", senders=senders)[0].outcome == "accepted"

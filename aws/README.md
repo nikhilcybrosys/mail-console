@@ -279,14 +279,19 @@ that fails a check is recorded with its reason on the DMARC page and dropped.
 
 **Who sent it matters as much as whether it is genuine mail.** A passing DMARC check proves who *sent* the mail, not that the
 sender is a real reporting provider: anyone who controls a domain with DMARC set up can mail you a report that claims to be
-from "google.com". So the sender's domain is stored with every report and is part of its uniqueness key (a forged report can never
-take the slot of the genuine one). List the providers you recognise in `MC_DMARC_SENDER_DOMAINS`: their reports are *verified*.
-Reports from any other authenticated sender are still stored and counted, but labelled *unverified* (like uploads), and a verified
-copy of the same report replaces them. The DMARC page lists the unlisted senders it has seen so you can decide which to add.
+from "google.com". So the sender, read from the header From with a strict parser (exactly one plain mailbox, never an address
+found inside a display name, never the envelope sender), is stored with every report and is part of its uniqueness key (a forged
+report can never take the slot of the genuine one). List the providers you recognise in `MC_DMARC_SENDERS`: their reports are
+*verified*. An entry is either a **domain** (exactly that domain; its subdomains are *not* trusted, list them if you need them) or
+a **full address** (exactly that address). Where a domain is shared by many people (a consumer mail domain, or any domain that gives
+out addresses or subdomains), list the provider's exact address and never the domain. Reports from any other authenticated sender are
+still stored and counted, but labelled *unverified* (like uploads), and a verified copy of the same report replaces them. The DMARC
+page lists the unlisted senders it has seen so you can decide which to add. The console does not compare the sender with the
+organisation named inside the report, because providers name themselves inconsistently.
 
 **Allowances** are kept in separate pools, so strangers cannot use up the allowance of the providers you list: mail that failed the
 checks (its From is unauthenticated, so it is never counted against anyone), listed providers (`MC_DMARC_MAX_PER_DAY`, 300), other
-authenticated senders (`MC_DMARC_UNLISTED_MAX_PER_DAY`, 200) and each sender on its own (`MC_DMARC_MAX_PER_SENDER`, 50), each over a
+authenticated senders (`MC_DMARC_UNLISTED_MAX_PER_DAY`, 200) and each sender address on its own (`MC_DMARC_MAX_PER_SENDER`, 50), each over a
 rolling day. Mail beyond an allowance is **not deleted**: it stays on the queue and ends in the dead-letter queue, where it can be
 recovered, and one line a day in the log says it happened.
 
@@ -374,7 +379,7 @@ second worker process:
 | `MC_DMARC_ADDRESS` | `dmarc@reports.example.com` |
 | `MC_DMARC_BUCKET` | `$B` |
 | `MC_DMARC_KEY_PREFIX` | optional, default `dmarc/` |
-| `MC_DMARC_SENDER_DOMAINS` | the reporting providers you trust, comma separated (for example `google.com,yahoo.com`); subdomains count. Empty means every mailed report is labelled unverified |
+| `MC_DMARC_SENDERS` | the reporting providers you trust, comma separated: exact domains or exact addresses, no wildcards and no automatic subdomains (for example `google.com,noreply-dmarc-support@example.net`). Empty means every mailed report is labelled unverified |
 | `MC_DMARC_MAX_PER_DAY`, `MC_DMARC_UNLISTED_MAX_PER_DAY`, `MC_DMARC_MAX_PER_SENDER` | optional daily allowances, defaults `300`, `200`, `50` |
 | `MC_WORKER_HEARTBEAT_FILE` | give it a different path from the event worker's if both share a volume |
 

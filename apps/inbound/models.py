@@ -47,7 +47,7 @@ class DmarcReport(models.Model):
     # unchecked). "upload": added by hand. The last two are taken at face value; the sha256 of the original file lets anyone
     # compare it with the attachment later.
     source = models.CharField(max_length=10, default="inbox")
-    sender_domain = models.CharField(max_length=255, blank=True)  # for mailed reports: the authenticated From domain; part of the uniqueness key
+    sender = models.CharField(max_length=320, blank=True)  # for mailed reports: the authenticated From address; part of the uniqueness key
     file_sha256 = models.CharField(max_length=64, blank=True)
     uploaded_by = models.CharField(max_length=254, blank=True)
     uploaded_at = models.DateTimeField(null=True, blank=True)
@@ -62,9 +62,9 @@ class DmarcReport(models.Model):
     fail_count = models.PositiveIntegerField(default=0)
 
     class Meta:
-        # Per source AND sender, so neither an uploaded report nor a forged mailed one (another sender claiming the same reporter name
-        # and id) can occupy the slot of the genuine report.
-        constraints = [models.UniqueConstraint(fields=["source", "sender_domain", "org_name", "report_id"], name="uniq_dmarc_report")]
+        # Per source AND sender address, so neither an uploaded report nor a forged mailed one (another sender claiming the same reporter
+        # name and id) can occupy the slot of the genuine report.
+        constraints = [models.UniqueConstraint(fields=["source", "sender", "org_name", "report_id"], name="uniq_dmarc_report")]
 
 
 class DmarcMail(models.Model):

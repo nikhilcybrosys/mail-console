@@ -13,7 +13,7 @@ Anyone on the internet can send mail to that address, so nothing here is trusted
 
 A passing DMARC check proves who SENT the mail, not that the sender is a genuine reporting provider. So the sender's domain is
 stored with every report (it is part of the uniqueness key: another sender cannot take a genuine report's slot), reports from
-senders on the operator's list (MC_DMARC_SENDER_DOMAINS) are "inbox" (verified) and reports from any other authenticated
+senders on the operator's list (MC_DMARC_SENDERS: exact domains or exact addresses, never subdomains) are "inbox" (verified) and reports from any other authenticated
 sender are "mail" (stored, counted, labelled unverified like uploads).
 
 Daily allowances are kept in separate pools so strangers cannot use up the allowance of the providers you list: mail that failed
@@ -92,6 +92,25 @@ def _ts(value, fallback):
     return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
+def _sender(common):
+    """The header From as ONE exact address, or "" if there is not exactly one plain mailbox.
+
+    Parsed with the strict RFC parser, never searched for with a pattern: a display name such as '"ceo@good.example" <x@evil.example>'
+    must yield x@evil.example, which is what SES's DMARC check was about. The envelope sender is never a fallback.
+    """
+    values = common.get("from") if isinstance(common, dict) else None
+    if not isinstance(values, list) or len(values) != 1 or not isinstance(values[0], str) or len(values[0]) > 998:
+        return ""
+    try:
+        header = email.policy.default.header_factory("From", values[0])
+    except Exception:  # noqa: BLE001: hostile header text can fail in odd ways
+        return ""
+    if header.defects or len(header.addresses) != 1 or len(header.groups) != 1 or header.groups[0].display_name is not None:
+        return ""
+    addr = header.addresses[0].addr_spec
+    return addr.lower() if _ADDR.fullmatch(addr) else ""
+
+
 def read_notice(body, topics, now=None):
     """SQS body -> Notice. Raises UnexpectedTopic / IgnoredMessage / ParseError (the worker's usual three outcomes)."""
     now = now or djtz.now()
@@ -106,13 +125,9 @@ def read_notice(body, topics, now=None):
         raise ParseError("notification has no usable message id")
     action = receipt.get("action") if isinstance(receipt.get("action"), dict) else {}
     recipients = [str(r).strip().lower() for r in receipt.get("recipients") or [] if isinstance(r, str)][:50]
-    source = mail.get("source") if isinstance(mail.get("source"), str) else ""
-    common_from = (mail.get("commonHeaders") or {}).get("from") if isinstance(mail.get("commonHeaders"), dict) else None
-    # The header From is what the DMARC verdict is about; the envelope sender is only the fallback.
-    from_text = (common_from[0] if isinstance(common_from, list) and common_from and isinstance(common_from[0], str) else "") or source
-    m = _ADDR.search(from_text)
+    sender = _sender(mail.get("commonHeaders"))
     verdicts = {k: _status(receipt, f"{k}Verdict") for k in ("virus", "spam", "dmarc", "dkim", "spf")}
-    return Notice(mid, _ts(mail.get("timestamp") or receipt.get("timestamp"), now), (m.group(0).lower() if m else "")[:320], recipients, verdicts,
+    return Notice(mid, _ts(mail.get("timestamp") or receipt.get("timestamp"), now), sender, recipients, verdicts,
                   str(action.get("bucketName") or ""), str(action.get("objectKey") or ""))
 
 
@@ -127,6 +142,8 @@ def check_notice(n, *, address, bucket, prefix):
     if n.verdicts["dmarc"] != "PASS":
         # DMARC PASS means the mail genuinely came from the domain in its From header (SPF or DKIM aligned with it).
         raise Refused(f"the sender could not be authenticated (DMARC {n.verdicts['dmarc'] or 'no result'})")
+    if not n.from_addr:
+        raise Refused("the message has no single, plain sender address")
     if n.bucket != bucket:
         raise Refused("stored in a bucket this console does not read")
     tail = n.key[len(prefix):] if n.key.startswith(prefix) else ""
@@ -176,15 +193,16 @@ def _domain(addr):
     return addr.rsplit("@", 1)[-1].lower() if "@" in addr else ""
 
 
-def is_listed(domain, senders):
-    """Is this sender domain (or a subdomain of it) one of the operator's reporting providers?"""
-    return bool(domain) and any(domain == d or domain.endswith("." + d) for d in senders)
+def is_listed(addr, senders):
+    """Is this authenticated sender on the operator's list? An entry is a domain (exactly that domain, not its subdomains) or a
+    full address (exactly that address). Entries are matched whole, never as suffixes or patterns."""
+    return bool(addr) and any(e in (addr, _domain(addr)) for e in senders)
 
 
 def _listed_q(senders):
     q = Q(pk__in=[])
-    for d in senders:
-        q |= Q(sender_domain=d) | Q(sender_domain__endswith="." + d)
+    for e in senders:
+        q |= Q(from_addr=e) if "@" in e else Q(sender_domain=e)
     return q
 
 
@@ -206,7 +224,7 @@ def process(n, fetch, *, now=None, allowed=None, address=None, bucket=None, pref
     address = settings.DMARC_ADDRESS if address is None else address
     bucket = settings.DMARC_BUCKET if bucket is None else bucket
     prefix = settings.DMARC_KEY_PREFIX if prefix is None else prefix
-    senders = settings.DMARC_SENDER_DOMAINS if senders is None else senders
+    senders = settings.DMARC_SENDERS if senders is None else senders
     done = DmarcMail.objects.filter(ses_message_id=n.ses_message_id).first()
     if done:
         return done
@@ -219,17 +237,15 @@ def process(n, fetch, *, now=None, allowed=None, address=None, bucket=None, pref
             _over(now, "unauthenticated", f"{UNAUTHENTICATED_MAX_PER_DAY} mails a day that failed the checks were logged; the rest are kept on the queue")
         return _record(n, "refused", str(why))
     # 2. Authenticated sender: allowances, per pool and per sender.
-    domain = _domain(n.from_addr)
-    if not domain:
-        return _record(n, "refused", "the message has no sender address")
-    trusted = is_listed(domain, senders)
+    domain = _domain(n.from_addr)    # never empty here: check_notice refused a message without one plain sender address
+    trusted = is_listed(n.from_addr, senders)
     pool = _rows(now).exclude(sender_domain="")
     if trusted and pool.filter(_listed_q(senders)).count() >= settings.DMARC_MAX_PER_DAY:
         _over(now, "listed", f"the daily allowance of {settings.DMARC_MAX_PER_DAY} mails from your listed providers is used up")
     if not trusted and pool.exclude(_listed_q(senders)).count() >= settings.DMARC_UNLISTED_MAX_PER_DAY:
         _over(now, "unlisted", f"the daily allowance of {settings.DMARC_UNLISTED_MAX_PER_DAY} mails from senders that are not on your list is used up")
-    if pool.filter(sender_domain=domain).count() >= settings.DMARC_MAX_PER_SENDER:
-        _over(now, "sender-" + re.sub(r"[^a-z0-9.-]", "", domain)[:60], f"{domain} has used its daily allowance of {settings.DMARC_MAX_PER_SENDER} mails")
+    if pool.filter(from_addr=n.from_addr).count() >= settings.DMARC_MAX_PER_SENDER:
+        _over(now, "sender-" + re.sub(r"[^a-z0-9.@_%+-]", "", n.from_addr)[:80], f"{n.from_addr} has used its daily allowance of {settings.DMARC_MAX_PER_SENDER} mails")
     # 3. The message itself.
     try:
         raw = fetch(n.bucket, n.key)
@@ -238,7 +254,7 @@ def process(n, fetch, *, now=None, allowed=None, address=None, bucket=None, pref
         return _record(n, "refused", str(why), sender_domain=domain)
     allowed = dmarc_upload.watched_domains() if allowed is None else allowed
     source = "inbox" if trusted else "mail"
-    results = [dmarc_upload.store_report(data, name, source=source, allowed=allowed, now=now, sender_domain=domain) for name, data in files]
+    results = [dmarc_upload.store_report(data, name, source=source, allowed=allowed, now=now, sender=n.from_addr) for name, data in files]
     added = sum(r.status == "added" for r in results)
     if added:
         outcome, reason = "accepted", ""

@@ -113,6 +113,6 @@ def collection(enabled, now=None):
         return None
     last = DmarcMail.objects.exclude(outcome="refused").order_by("-received_at").values_list("received_at", flat=True).first()
     counts = {o: week.filter(outcome=o).count() for o in ("accepted", "duplicate", "refused")}
-    unlisted = sorted(set(DmarcReport.objects.filter(source="mail", end__gte=now - timedelta(days=30)).values_list("sender_domain", flat=True)))
+    unlisted = sorted(set(DmarcReport.objects.filter(source="mail", end__gte=now - timedelta(days=30)).values_list("sender", flat=True)))
     return {"enabled": enabled, "last": last, "silent": bool(enabled and last and now - last > SILENT_AFTER), **counts,
             "refusals": list(week.filter(outcome="refused").order_by("-received_at")[:10]), "unlisted_senders": unlisted}
