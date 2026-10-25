@@ -40,3 +40,6 @@
 
 /* Setup check: a fixed state column so titles line up whatever the badge says */
 .setup-state{flex:0 0 76px}.setup-state .badge{min-width:72px;justify-content:center}
+
+/* the text of a message sent through Compose: shown as written, wrapped, never rendered */
+.sent-text{margin:0;white-space:pre-wrap;word-break:break-word;font:inherit;line-height:1.55;color:var(--text)}

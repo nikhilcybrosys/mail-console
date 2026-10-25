@@ -46,7 +46,9 @@ class Draft(models.Model):
 
 
 class SentMail(models.Model):
-    """What was sent through Compose, by whom. Not the body: the console never keeps a copy of what people write."""
+    """What was sent through Compose, by whom. The text of the message is kept only when MC_SEND_KEEP_BODY_DAYS is above 0, and is
+    blanked (the rest of the row stays) once it is older than that. Only the plain text the author wrote is kept, never what the
+    recipient received, and only mail sent through Compose: SES does not hand the console anyone else's content."""
 
     user_email = models.CharField(max_length=254, db_index=True)
     from_address = models.CharField(max_length=254)
@@ -55,6 +57,8 @@ class SentMail(models.Model):
     bcc_addrs = models.JSONField(default=list)
     subject = models.CharField(max_length=500)
     recipient_count = models.PositiveIntegerField()
+    reply_to = models.CharField(max_length=254, blank=True)
+    body = models.TextField(blank=True)
     ses_message_id = models.CharField(max_length=100, db_index=True)
     sent_at = models.DateTimeField(auto_now_add=True, db_index=True)
 

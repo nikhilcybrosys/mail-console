@@ -36,6 +36,8 @@ never run for real.
   alert and opt-in AWS files (`aws/README.md` section 9) that receive the reports at a reports address through SES, S3, SNS and
   SQS. Nothing exists in AWS or DNS for it yet, and it has not run against a real SES notification: the receipt-rule policy
   conditions and the exact notification fields are taken from the AWS documentation and must be proved with one real test mail.
+- **Text of Compose mail (built and tested locally, NOT deployed):** optional (`MC_SEND_KEEP_BODY_DAYS`), admin-only, reason and
+  passkey, audited, blanked after the set number of days. Mail from other applications still has no body (SES does not provide it).
 - **Domain scope (tested):** narrows what a limited person sees (messages, DNS, alerts, suppression list, overview tables). It is
   not a tenant boundary; the README lists what it does not cover.
 - **Inbound (tested):** HTML sanitizer, secret redaction, a cookie-less renderer on a separate origin, a DMARC report parser,

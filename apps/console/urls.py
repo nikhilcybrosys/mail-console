@@ -14,6 +14,7 @@ urlpatterns = [
     path("messages/<int:pk>/", views.message_detail, name="message_detail"),
     path("messages/<int:pk>/drawer/", views.message_drawer, name="message_drawer"),
     path("messages/<int:pk>/body/", views.message_body, name="message_body"),
+    path("messages/<int:pk>/sent-body/", views.sent_body, name="sent_body"),
     path("suppression/", views.suppression, name="suppression"),
     path("suppression/remove/", views.suppression_remove, name="suppression_remove"),
     path("suppression/export/", views.suppression_export, name="suppression_export"),

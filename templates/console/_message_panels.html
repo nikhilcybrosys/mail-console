@@ -43,7 +43,15 @@
 </div>
 
 <div class="tabpanel" role="tabpanel" id="{{ pfx }}-p-bd" aria-labelledby="{{ pfx }}-t-bd" hidden>
-  {% if can_body %}
+  {% if can_sent_body %}
+    <div class="callout callout-warn" role="note"><div>{% icon "lock" %}</div><div><div class="callout-title">{% trans "The text of this message is protected" %}</div><p>{% blocktrans with d=sent_keep_days %}This message was written in Compose, which keeps its text for {{ d }} days. Opening it needs a reason and a passkey check, and is recorded in the audit log.{% endblocktrans %}</p></div></div>
+    <div><a class="btn btn-primary" href="{% url 'sent_body' m.pk %}">{% trans "Open the message text" %}</a></div>
+  {% elif sent_body == "available" %}
+    {% include "components/_empty.html" with icon="lock" title=_("The text of this message is stored") text=_("Only deliverability and security admins can open it.") %}
+  {% elif sent_body == "gone" %}
+    {% if sent_keep_days %}{% include "components/_empty.html" with icon="lock" title=_("The text of this message is no longer stored") text=_("Compose keeps the text of what it sends for a limited time, and that time has passed. The record of who sent it and what happened to it stays.") %}
+    {% else %}{% include "components/_empty.html" with icon="lock" title=_("The text of this message was not stored") text=_("Keeping the text of Compose mail is switched off.") %}{% endif %}
+  {% elif can_body %}
     <div class="callout callout-warn" role="note"><div>{% icon "lock" %}</div><div><div class="callout-title">{% trans "Message body is protected" %}</div><p>{% trans "Opening it needs a reason and a passkey check, and is recorded in the audit log. Links and codes stay redacted." %}</p></div></div>
     <form class="stack" method="post" action="{% url 'message_body' m.pk %}">{% csrf_token %}
       <div class="field"><label class="label" for="{{ pfx }}-reason">{% trans "Why do you need to read this email?" %}</label><input class="input" id="{{ pfx }}-reason" name="reason" required placeholder="{% trans 'For example: customer ticket #4411' %}"></div>

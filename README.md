@@ -106,6 +106,11 @@ Write and send a one-off message from an address you own, without leaving the co
 - **Every send needs a passkey**, is attributed to the person in the audit log and in AWS CloudTrail, and goes through your
   configuration set so it appears in Sent mail with its delivery timeline. The audit log records who, from, how many and the
   message id, never the body.
+- **The text of what was sent (off by default):** set `MC_SEND_KEEP_BODY_DAYS` (for example `90`) and Compose keeps the plain text
+  the author wrote, plus the Reply-To, for that many days; after that the text is blanked and the rest of the record stays. A
+  deliverability or security admin opens it from the **Body** tab of the message in Sent mail, with a reason and a passkey check, and
+  every opening is audited (the reason, never the text). It is shown, never rendered. Only Compose mail is covered: SES does not
+  give the console the content of mail sent by other applications. Database backups hold the text for as long as they are kept.
 - **Guardrails:** per-message, per-person and per-day recipient limits, plus an optional daily limit for each From address (set under
   Sending addresses, counted across everyone, so a sensitive address like a payments one can have a low ceiling of its own); recipients on the SES suppression list are refused; line
   breaks in addresses or subjects are refused; what is sent is exactly what was previewed; a draft can only be sent once.
