@@ -193,6 +193,8 @@ SEND_MAX_RECIPIENTS = int(env_float("MC_SEND_MAX_RECIPIENTS", 10))              
 SEND_PER_USER_PER_HOUR = int(env_float("MC_SEND_PER_USER_PER_HOUR", 20))        # recipients per person
 SEND_PER_USER_PER_DAY = int(env_float("MC_SEND_PER_USER_PER_DAY", 100))
 SEND_PER_DAY = int(env_float("MC_SEND_PER_DAY", 300))                           # recipients, everyone together
+# Days Compose keeps the text of what it sent so an admin can read it later (with a reason and a passkey). 0 = keep nothing.
+SEND_KEEP_BODY_DAYS = int(env_float("MC_SEND_KEEP_BODY_DAYS", 0))
 SEND_MAX_SUBJECT = 200
 SEND_MAX_BODY = 100_000
 if SEND_ENABLED:
@@ -210,6 +212,8 @@ if SEND_ENABLED:
         _problems.append("MC_SEND_DEFAULT_REPLY_TO must be a plain address")
     if not (1 <= SEND_MAX_RECIPIENTS <= 50 and SEND_PER_USER_PER_HOUR >= 1 and SEND_PER_USER_PER_DAY >= SEND_PER_USER_PER_HOUR and SEND_PER_DAY >= SEND_PER_USER_PER_DAY):
         _problems.append("send limits must be positive, MC_SEND_MAX_RECIPIENTS at most 50, and hour <= per-person day <= everyone day")
+    if not 0 <= SEND_KEEP_BODY_DAYS <= 3650:
+        _problems.append("MC_SEND_KEEP_BODY_DAYS must be between 0 (keep nothing) and 3650")
     if _problems:
         raise ImproperlyConfigured("Compose is enabled but not configured correctly: " + "; ".join(_problems) + ".")
 

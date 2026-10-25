@@ -22,6 +22,7 @@ from apps.approvals import service as approvals
 from apps.approvals.models import ApprovalRequest
 from apps.audit.models import AuditLog
 from apps.audit.service import record, verify_chain
+from apps.compose.models import SentMail
 from apps.core.rbac import ROLES, has_capability, require_capability
 from apps.core.scope import scoped_alerts, scoped_identities, scoped_suppression, scoped_suppression_changes
 from apps.core.templatetags.ui import STATES
@@ -315,7 +316,11 @@ def _message_context(request, pk):
         what, todo = explain(e.event_type, _detail(e))
         timeline.append({"e": e, "what": what, "todo": todo, "detail": _detail(e)})
     recipients = list(msg.recipients.all())
+    sent = SentMail.objects.filter(ses_message_id=msg.ses_message_id).only("body").first()  # mail that was sent through Compose
+    sent_body = ("available" if sent.body else "gone") if sent else ""
     return {
+        "sent_body": sent_body, "sent_keep_days": settings.SEND_KEEP_BODY_DAYS,
+        "can_sent_body": sent_body == "available" and has_capability(request.user, "reveal_sent_body"),
         "m": msg, "timeline": timeline, "recipients": recipients,
         "can_body": bool(msg.body_ref) and has_capability(request.user, "reveal_body"),
         "category": MailCategory.objects.filter(name=msg.mail_category).first(),
@@ -361,6 +366,25 @@ def message_body(request, pk):
     BodyAccessLog.objects.create(user_email=request.user.email, message=msg, reason=reason)
     record("body.view", target=f"message#{msg.pk}", request=request, details={"reason": reason[:200], "category": msg.mail_category})
     return render(request, "console/body_frame.html", {"frame_url": issue("msg", msg.pk, request.user.pk), "title": msg.subject})
+
+
+@require_capability("reveal_sent_body", step_up=True)
+def sent_body(request, pk):
+    """The text of a message that was sent through Compose. GET asks for the reason (after the passkey check, which sends the person
+    back here with a GET); POST shows the text. A reason is mandatory and every view is audited. The text is escaped by the
+    template: it is shown, never rendered."""
+    msg = get_object_or_404(_scoped(Message.objects.all(), request.user), pk=pk)  # outside your domains: 404, as for the rest of the message
+    sent = SentMail.objects.filter(ses_message_id=msg.ses_message_id).first()
+    if sent is None or not sent.body:
+        return HttpResponseBadRequest("The text of this message is not stored")
+    if request.method != "POST":
+        return render(request, "console/sent_body_ask.html", {"m": msg, "keep_days": settings.SEND_KEEP_BODY_DAYS})
+    reason = (request.POST.get("reason") or "").strip()
+    if not reason:
+        return HttpResponseBadRequest("A reason is required")
+    BodyAccessLog.objects.create(user_email=request.user.email, message=msg, reason=reason)
+    record("sent_body.view", target=f"message#{msg.pk}", request=request, details={"reason": reason[:200], "category": msg.mail_category})
+    return render(request, "console/sent_body.html", {"m": msg, "sent": sent})
 
 
 # ------------------------------------------------------------------ suppression

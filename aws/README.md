@@ -253,6 +253,7 @@ Then set, in the console's environment:
 | `MC_SEND_CONFIG_SET` | the configuration set from `--send-config-set` |
 | `MC_AWS_SEND_ROLE_ARN` | `arn:aws:iam::<account>:role/mail-console-send` |
 | `MC_SEND_DEFAULT_REPLY_TO` | optional: where replies go when an address has no Reply-To of its own |
+| `MC_SEND_KEEP_BODY_DAYS` | optional: days to keep the text of what Compose sent so admins can read it later (default `0`: keep nothing) |
 | `MC_SEND_MAX_RECIPIENTS`, `MC_SEND_PER_USER_PER_HOUR`, `_PER_USER_PER_DAY`, `MC_SEND_PER_DAY` | optional limits (defaults 10, 20, 100, 300 recipients) |
 
 In the console, a security admin switches each address on under **Compose, Sending addresses** (they start off), and can set a

@@ -30,6 +30,7 @@ CAPABILITIES = {
     "test_alert_channels": {DELIVERABILITY_ADMIN, SECURITY_ADMIN},
     "export_data": {SUPPORT, DELIVERABILITY_ADMIN, SECURITY_ADMIN},
     "compose_send": {DELIVERABILITY_ADMIN, SECURITY_ADMIN},
+    "reveal_sent_body": {DELIVERABILITY_ADMIN, SECURITY_ADMIN},
     "manage_senders": {SECURITY_ADMIN},
     "dmarc_upload": {DELIVERABILITY_ADMIN, SECURITY_ADMIN},
     "manage_templates": {SECURITY_ADMIN},

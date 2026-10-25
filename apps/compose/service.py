@@ -400,7 +400,18 @@ def send(user, draft_id, expected_hash, region, request=None):
         raise SendError("AWS did not answer clearly, so the message MAY have been sent. Check Sent mail before trying again.") from None
 
     sent = SentMail.objects.create(user_email=user.email, from_address=p.from_address, to_addrs=p.to, cc_addrs=p.cc, bcc_addrs=p.bcc, subject=p.subject,
-                                   recipient_count=len(p.recipients), ses_message_id=message_id)
+                                   recipient_count=len(p.recipients), ses_message_id=message_id,
+                                   reply_to=p.reply_to, body=p.text if settings.SEND_KEEP_BODY_DAYS > 0 else "")
     Draft.objects.filter(pk=d.pk).delete()
     record("compose.sent", actor=user.email, request=request, target=message_id, details={**detail, "message_id": message_id})
     return sent
+
+
+def prune_bodies(now=None):
+    """Blank the stored text of sent mail older than MC_SEND_KEEP_BODY_DAYS (0 blanks all of it). The rest of the row stays.
+    Returns how many were blanked."""
+    now = now or timezone.now()
+    qs = SentMail.objects.exclude(body="")
+    if settings.SEND_KEEP_BODY_DAYS > 0:
+        qs = qs.filter(sent_at__lt=now - timedelta(days=settings.SEND_KEEP_BODY_DAYS))
+    return qs.update(body="")
