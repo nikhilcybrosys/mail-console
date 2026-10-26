@@ -385,3 +385,82 @@ def test_html_only_archived_mail_is_shown_as_text_and_link_targets_are_dropped(a
     c, _ = login(DELIVERABILITY_ADMIN, "d@example.com", step_up=True)
     html = open_text(c, app_message()).content.decode()
     assert "Hello Alice" in html and "use this link" in html and "SECRETTOKEN99" not in html and "x.example/r" not in html
+
+
+# ---------------------------------------------------------------- mail categories are followed when they have been set up
+def categorised(arch, name="billing", **kw):
+    from apps.sesdata.models import MailCategory
+    MailCategory.objects.create(name=name, **kw)
+    msg = app_message()
+    Message.objects.filter(pk=msg.pk).update(mail_category=name)
+    return Message.objects.get(pk=msg.pk)
+
+
+def test_a_category_with_reading_switched_off_blocks_the_archive_and_aws_is_not_asked(arch):
+    msg = categorised(arch, store_body=False)
+    c, _ = login(DELIVERABILITY_ADMIN, "d@example.com", step_up=True)
+    html = c.get(reverse("message_detail", args=[msg.pk])).content.decode()
+    assert "switched off" in html and reverse("sent_body", args=[msg.pk]) not in html
+    assert open_text(c, msg).status_code == 400 and c.get(reverse("sent_body", args=[msg.pk])).status_code == 400 and arch.calls == []
+
+
+def test_a_category_that_allows_reading_opens_normally(arch):
+    msg = categorised(arch, store_body=True, body_retention_days=30)
+    c, _ = login(DELIVERABILITY_ADMIN, "d@example.com", step_up=True)
+    assert "Hello Alice" in open_text(c, msg).content.decode()
+
+
+def test_a_categorys_shorter_window_wins_over_the_global_one(arch):
+    from apps.sesdata.models import MailCategory
+    MailCategory.objects.create(name="billing", store_body=True, body_retention_days=2)
+    msg = app_message(age=timedelta(days=3))
+    Message.objects.filter(pk=msg.pk).update(mail_category="billing")
+    c, _ = login(DELIVERABILITY_ADMIN, "d@example.com", step_up=True)
+    assert open_text(c, msg).status_code == 400 and arch.calls == []                    # 3 days old: inside the global 30, outside the category's 2
+
+
+def test_a_categorys_longer_window_does_not_extend_the_global_one(arch):
+    from apps.sesdata.models import MailCategory
+    MailCategory.objects.create(name="billing", store_body=True, body_retention_days=365)
+    msg = app_message(age=timedelta(days=31))
+    Message.objects.filter(pk=msg.pk).update(mail_category="billing")
+    c, _ = login(DELIVERABILITY_ADMIN, "d@example.com", step_up=True)
+    assert open_text(c, msg).status_code == 400
+
+
+def test_a_categorys_redaction_rules_are_applied_and_a_bad_rule_is_ignored(arch):
+    arch.content_body = {"Text": "Order ORD-48213 for Ann. Reference REF/99-1234."}
+    msg = categorised(arch, store_body=True, redaction_rules=[r"ORD-\d+", r"REF/[\d-]+", "([unclosed"])
+    c, _ = login(DELIVERABILITY_ADMIN, "d@example.com", step_up=True)
+    html = open_text(c, msg).content.decode()
+    assert "ORD-48213" not in html and "REF/99-1234" not in html and "for Ann." in html and "[redacted]" in html
+
+
+def test_mail_with_no_category_row_follows_the_global_settings(arch):
+    msg = app_message()
+    Message.objects.filter(pk=msg.pk).update(mail_category="not-a-configured-category")
+    c, _ = login(DELIVERABILITY_ADMIN, "d@example.com", step_up=True)
+    assert "Hello Alice" in open_text(c, msg).content.decode()
+
+
+# ---------------------------------------------------------------- redaction: the parser-differential cases
+@pytest.mark.parametrize("raw, gone", [
+    ("Open HTTPS://APP.EXAMPLE/go?Token=SECRET1234567", "SECRET1234567"),                              # upper-case scheme
+    ("Open HTTPS://APP.EXAMPLE/go?foo=SECRET1234567", "SECRET1234567"),                                # upper-case scheme, ordinary parameter name
+    ("Open https://app.example/go#access_token=SECRET1234567&x=1", "SECRET1234567"),                    # fragment
+    ("Open https://app.example/go?a=1#frag-SECRET1234567", "SECRET1234567"),                            # query and fragment
+    ("Token eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dBjftJeZ4CVPmB92K27uhbUJU1p1r_wW1gFWFOEjXk here", "eyJzdWIi"),
+    ("Download https://files.example/d/abcdefghij.klmnopqrst.uvwxyz0123.pdf now", "abcdefghij.klmnop"),   # dots inside the opaque run
+])
+def test_more_ways_of_hiding_a_secret_in_a_link_are_masked(raw, gone):
+    out = archive.redact_for_display(raw)
+    assert gone not in out and "[redacted]" in out
+
+
+@pytest.mark.parametrize("raw", [
+    "see https://a-very-long-subdomain-name-for-tests.example.com/path/ok for details",              # a long host is not a token
+    "open https://app.example/files/report.pdf",                                                     # a short file name stays
+    "see https://app.example/billing/invoices/123?x=1".split("?")[0],
+])
+def test_ordinary_links_stay_readable(raw):
+    assert archive.redact_for_display(raw) == raw
