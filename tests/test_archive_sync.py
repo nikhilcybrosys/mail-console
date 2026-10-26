@@ -292,9 +292,9 @@ class FakeGmail:
         return f"g{len(self.inserted)}"
 
 
-def sync(mm, gm, raws=None, **kw):
-    s = archive_sync.Sync(reader=archive.Reader(mm=mm, archive_id="a-1", sleep=lambda s: None), gmail=gm,
-                         fetch=lambda url: (raws or {}).get(url.rsplit("/", 1)[1], url.rsplit("/", 1)[1].encode()))
+def sync(mm, gm, raws=None, fetch=None, **kw):
+    s = archive_sync.Sync(reader=archive.Reader(mm=mm, archive_id="a-1", sleep=lambda s: None), gmail=gm, sleep=lambda s: None,
+                          fetch=fetch or (lambda url: (raws or {}).get(url.rsplit("/", 1)[1], url.rsplit("/", 1)[1].encode())))
     return s
 
 
@@ -517,6 +517,74 @@ def test_no_message_content_is_ever_stored_in_the_database():
     sync(mm, gm, {"id1": b"TOP SECRET BODY"}).run_once(NOW)
     stored = json.dumps(list(ArchiveSyncItem.objects.values()), default=str) + json.dumps(list(ArchiveSyncState.objects.values()), default=str)
     assert "TOP SECRET" not in stored
+
+
+# ---------------------------------------------------------------- a refused download is retried with a fresh link
+def flaky(statuses, then=b"original"):
+    """A fetch that answers with these statuses in turn (a DownloadRefused for each), then succeeds."""
+    queue = list(statuses)
+
+    def fetch(url):
+        if queue:
+            raise archive_sync.DownloadRefused(queue.pop(0))
+        return then
+    fetch.left = queue
+    return fetch
+
+
+def one_message(fetch):
+    mm, gm = FakeMM([row(1, NOW - timedelta(hours=1))]), FakeGmail()
+    s = sync(mm, gm, fetch=fetch)
+    s.run_once(NOW)
+    return mm, gm, s
+
+
+def test_a_refused_download_is_retried_with_a_fresh_link_until_it_works():
+    """Found on real AWS: S3 answered 403 to about a quarter of requests for the same link, and the next request worked."""
+    mm, gm, s = one_message(flaky([403, 403]))
+    assert s.stats["imported"] == 1 and gm.inserted[0][0] == b"original"
+    assert len(mm.dl) == 3 and ArchiveSyncItem.objects.get().attempts == 1       # a fresh link each time, and it counts as ONE attempt
+
+
+def test_server_errors_are_retried_too():
+    _, _, s = one_message(flaky([503, 500]))
+    assert s.stats["imported"] == 1
+
+
+def test_a_download_that_keeps_being_refused_gives_up_after_the_set_number_of_tries_with_a_plain_reason():
+    mm, gm, s = one_message(flaky([403] * 10))
+    item = ArchiveSyncItem.objects.get()
+    assert s.stats["failed"] == 1 and item.state == "failed" and item.detail == "The archived message could not be downloaded." and len(mm.dl) == archive_sync.DOWNLOAD_TRIES
+
+
+@pytest.mark.parametrize("status", [404, 400, 401, 410])
+def test_other_refusals_are_not_retried(status):
+    mm, _, s = one_message(flaky([status] * 10))
+    assert s.stats["failed"] == 1 and len(mm.dl) == 1
+
+
+def test_an_error_that_is_not_a_refused_download_is_not_retried():
+    calls = []
+
+    def fetch(url):
+        calls.append(url)
+        raise archive.ArchiveError("something else")
+    mm, _, s = one_message(fetch)
+    assert len(calls) == 1 and s.stats["failed"] == 1
+
+
+def test_the_wait_between_tries_grows_and_is_short(monkeypatch):
+    waits = []
+    mm, gm = FakeMM([row(1, NOW - timedelta(hours=1))]), FakeGmail()
+    s = archive_sync.Sync(reader=archive.Reader(mm=mm, archive_id="a-1", sleep=lambda s: None), gmail=gm, sleep=waits.append, fetch=flaky([403, 403, 403]))
+    s.run_once(NOW)
+    assert waits == [1, 2, 3] and s.stats["imported"] == 1
+
+
+def test_the_real_download_reports_the_status_it_was_refused_with():
+    with pytest.raises(archive_sync.DownloadRefused) as e:
+        archive_sync.download("https://x.example/m", get=lambda *a, **k: DL([b"x"], 403))
+    assert e.value.status == 403 and isinstance(e.value, archive.ArchiveError)
 
 
 # ---------------------------------------------------------------- the download
