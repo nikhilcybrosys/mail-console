@@ -134,8 +134,8 @@ def html_to_text(html):
 
 _QUERY = re.compile(r"(https?://[^\s<>\"'?#]+)\?[^\s<>\"']*", re.I)
 _FRAGMENT = re.compile(r"(https?://[^\s<>\"'#]+)#[^\s<>\"']*", re.I)
-# A long unbroken run in a link's path (not the host): tokens, ids and signed names. The character before the run must be a single "/".
-_OPAQUE = re.compile(r"(?<=[^/]/)[A-Za-z0-9_~.-]{24,}(?=[/\s<>\"'?#]|$)")
+# A long unbroken run after a "/" (a link's path: tokens, ids and signed names), except the host, which directly follows "://".
+_OPAQUE = re.compile(r"(?<!://)(?<=/)[A-Za-z0-9_~.-]{24,}(?=[/\s<>\"'?#]|$)")
 _JWT = re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]*")
 
 
