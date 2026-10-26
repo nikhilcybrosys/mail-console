@@ -40,6 +40,9 @@ never run for real.
   archive on demand (`aws/README.md` section 10), redacted, admin-only with a reason and passkey, last 30 days shown. Verified on real AWS:
   archiving of an API-sent message, the search by Message-ID, the content read and the console role's narrow read permission. Not yet verified:
   that mail sent over SMTP is archived too.
+- **Permanent copy of archived mail in a Google Workspace mailbox (built and tested with stand-ins; NOT run against real Gmail):** the scan, the
+  de-duplication, retries and the Gmail calls are covered by tests against fakes. Not yet verified: a real token request, label creation and insert
+  against Google, which needs the credential (`aws/README.md` section 11).
 - **Text of Compose mail (built and tested locally, NOT deployed):** optional (`MC_SEND_KEEP_BODY_DAYS`), admin-only, reason and
   passkey, audited, blanked after the set number of days. Mail from other applications still has no body (SES does not provide it).
 - **Domain scope (tested):** narrows what a limited person sees (messages, DNS, alerts, suppression list, overview tables). It is

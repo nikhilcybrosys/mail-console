@@ -165,3 +165,31 @@ class BodyAccessLog(models.Model):
     inbound_id = models.BigIntegerField(null=True, blank=True)
     reason = models.TextField()
     at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+
+class ArchiveSyncItem(models.Model):
+    """One archived message and what happened when it was copied into the mailbox. Metadata only: never the message itself.
+
+    `archived_message_id` is unique, which makes a repeated run harmless: nothing is imported twice."""
+
+    IMPORTED, FAILED, SKIPPED = "imported", "failed", "skipped"
+
+    archived_message_id = models.CharField(max_length=300, unique=True)
+    message_id_header = models.CharField(max_length=300, blank=True)
+    from_addr = models.CharField(max_length=320, blank=True)
+    state = models.CharField(max_length=10, db_index=True)  # imported | failed | skipped
+    attempts = models.PositiveSmallIntegerField(default=0)
+    detail = models.CharField(max_length=200, blank=True)   # a short reason for failed/skipped; never mail content or API error text
+    gmail_id = models.CharField(max_length=100, blank=True)
+    first_seen = models.DateTimeField(auto_now_add=True)
+    done_at = models.DateTimeField(null=True, blank=True)
+
+
+class ArchiveSyncState(models.Model):
+    """One row: how far the scan of the archive has got, and when the sync last ran."""
+
+    scanned_to = models.DateTimeField(null=True, blank=True)   # every window before this was fully processed
+    last_run_at = models.DateTimeField(null=True, blank=True)
+    last_ok_at = models.DateTimeField(null=True, blank=True)   # last run that finished without a failure
+    incomplete_at = models.DateTimeField(null=True, blank=True)    # last time a window held more messages than a search can return
+    incomplete_windows = models.PositiveIntegerField(default=0)    # how many such windows there have been in all

@@ -5,7 +5,7 @@
       "Sid": "ReadTheMailArchive",
       "Effect": "Allow",
       "Action": [
-        "ses:GetArchive",
+        "ses:GetArchive", "ses:GetArchiveMessage",
         "ses:StartArchiveSearch",
         "ses:GetArchiveSearch",
         "ses:GetArchiveSearchResults",

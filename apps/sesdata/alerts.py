@@ -108,6 +108,23 @@ def evaluate(now=None, silent_minutes=None):
          "Reports normally arrive daily. Check the reports address's MX record, the SES receipt rule and the DMARC worker. (Only raised once reports have arrived before.)",
          bool(col and col["silent"]))
 
+    from . import archive_sync  # imported here: keeps this module importable without the sync's dependencies
+    from .models import ArchiveSyncItem, ArchiveSyncState
+    state = ArchiveSyncState.objects.first() if settings.ARCHIVE_SYNC_ENABLED else None
+    stalled = bool(settings.ARCHIVE_SYNC_ENABLED and state is not None and state.last_ok_at is not None
+                   and now - state.last_ok_at > timedelta(seconds=3 * settings.ARCHIVE_SYNC_INTERVAL) + timedelta(minutes=30))
+    _set("archive_sync_stalled", "warn", "The copy of archived mail into the mailbox has stopped",
+         "No clean pass for a long while. The archive keeps the originals for its retention period (at least three months), so nothing is lost yet: check the sync process and the Google credential.", stalled)
+    _set("archive_sync_incomplete", "warn", "Some archived messages may not have been copied into the mailbox",
+         "A moment in the archive held more messages than one search can return. See the Setup check, Mailbox copy.",
+         bool(settings.ARCHIVE_SYNC_ENABLED and state is not None and state.incomplete_at is not None and now - state.incomplete_at < archive_sync.INCOMPLETE_SHOWN))
+    big = ArchiveSyncItem.objects.filter(state=ArchiveSyncItem.SKIPPED).count() if settings.ARCHIVE_SYNC_ENABLED else 0
+    _set("archive_sync_skipped", "warn", f"{big} archived message(s) are too large to copy into the mailbox",
+         "Messages over 10 MB are not copied automatically. See the Setup check, Mailbox copy.", bool(big))
+    stuck = ArchiveSyncItem.objects.filter(state=ArchiveSyncItem.FAILED, attempts__gte=archive_sync.MAX_ATTEMPTS).count() if settings.ARCHIVE_SYNC_ENABLED else 0
+    _set("archive_sync_failed", "warn", f"{stuck} archived message(s) could not be copied into the mailbox",
+         "They were tried several times and gave up. See the Setup check, Mailbox copy.", bool(stuck))
+
     latest = {}
     for r in DnsCheckResult.objects.order_by("checked_at"):
         latest[(r.domain, r.record_kind, tuple(r.expected))] = r

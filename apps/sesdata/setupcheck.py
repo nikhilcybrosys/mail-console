@@ -375,10 +375,53 @@ def _archive_checks(mm_client):
     return out
 
 
-def run_checks(region, *, user=None, sqs_client=None, now=None, mailmanager_client=None):
+def _archive_sync_checks(now, gmail=None):
+    """Only when the copy into a mailbox is switched on: does the credential work, is the sync running, did anything fail?"""
+    from .models import ArchiveSyncItem, ArchiveSyncState
+    from . import archive_sync
+    g, out = "Mailbox copy", []
+    try:
+        if gmail is None:
+            from .gmail import Auth, Gmail
+            gmail = Gmail(Auth.from_settings(settings))
+        n = gmail.check()
+        out.append(Check(g, "mcred", "The Google credential works", OK, f"Signed in as {settings.ARCHIVE_SYNC_MAILBOX}; {n} labels visible."))
+    except Exception as exc:  # noqa: BLE001: reported, not raised; this is a diagnostic page
+        from .gmail import GoogleError
+        out.append(Check(g, "mcred", "The Google credential does not work", FAIL, str(exc) if isinstance(exc, GoogleError) else f"Unexpected error: {_short(exc)}.",
+                         "Check the key or token, and that the mailbox is authorised for the two Gmail permissions (aws/README.md, section 11)."))
+    state = ArchiveSyncState.objects.first()
+    limit = timedelta(seconds=3 * settings.ARCHIVE_SYNC_INTERVAL) + timedelta(minutes=10)
+    if state is None or state.last_ok_at is None:
+        out.append(Check(g, "mrun", "The sync has not completed a pass yet", WARN, "Nothing has been copied yet.",
+                         "Start the sync process (python manage.py sync_archive_to_mailbox) and look at its log."))
+    elif now - state.last_ok_at > limit:
+        out.append(Check(g, "mrun", "The sync has stopped keeping up", WARN, f"Last clean pass {_minutes(now - state.last_ok_at)} ago.", "Check that the sync process is running and read its log."))
+    else:
+        out.append(Check(g, "mrun", "The sync is running", OK, f"Last clean pass {_minutes(now - state.last_ok_at)} ago."))
+    if state is not None and state.incomplete_at is not None and now - state.incomplete_at < archive_sync.INCOMPLETE_SHOWN:
+        out.append(Check(g, "minc", "Some archived messages may not have been copied", FAIL,
+                         f"A moment in the archive held more messages than one search can return ({state.incomplete_windows} such moment(s) so far; the last on {state.incomplete_at:%d %b %Y}).",
+                         "Look at the archive for that time in the AWS console. The archive keeps the originals for its retention period."))
+    stuck = ArchiveSyncItem.objects.filter(state=ArchiveSyncItem.FAILED, attempts__gte=archive_sync.MAX_ATTEMPTS).count()
+    waiting = ArchiveSyncItem.objects.filter(state=ArchiveSyncItem.FAILED, attempts__lt=archive_sync.MAX_ATTEMPTS).count()
+    if stuck:
+        out.append(Check(g, "mfail", f"{stuck} message(s) could not be copied", FAIL, "They were tried several times and gave up.",
+                         "Look at the reasons in the database (ArchiveSyncItem.detail); the archive keeps the originals for its retention period."))
+    elif waiting:
+        out.append(Check(g, "mfail", f"{waiting} message(s) are waiting to be retried", WARN, "A copy failed and will be tried again."))
+    skipped = ArchiveSyncItem.objects.filter(state=ArchiveSyncItem.SKIPPED).count()
+    if skipped:
+        out.append(Check(g, "mskip", f"{skipped} message(s) are too large to copy", WARN, "Messages over 10 MB are not copied automatically.",
+                         "Open them in the archive (AWS console, Mail Manager) and export them by hand if you need them in the mailbox."))
+    out.append(Check(g, "mcount", "Messages copied so far", INFO, str(ArchiveSyncItem.objects.filter(state=ArchiveSyncItem.IMPORTED).count())))
+    return out
+
+
+def run_checks(region, *, user=None, sqs_client=None, now=None, mailmanager_client=None, gmail=None):
     now = now or timezone.now()
     ses, idents = _ses_checks(region, now, user)
-    return ses + _pipeline_checks(region, idents, now, sqs_client) + _access_checks(user) + (_dmarc_checks(now, sqs_client) if settings.DMARC_ENABLED else []) + (_compose_checks(region) if settings.SEND_ENABLED else []) + (_archive_checks(mailmanager_client) if settings.MAIL_ARCHIVE_ID else []) + _hardening_checks()
+    return ses + _pipeline_checks(region, idents, now, sqs_client) + _access_checks(user) + (_dmarc_checks(now, sqs_client) if settings.DMARC_ENABLED else []) + (_compose_checks(region) if settings.SEND_ENABLED else []) + (_archive_checks(mailmanager_client) if settings.MAIL_ARCHIVE_ID else []) + (_archive_sync_checks(now, gmail) if settings.ARCHIVE_SYNC_ENABLED else []) + _hardening_checks()
 
 
 def grouped(checks):
