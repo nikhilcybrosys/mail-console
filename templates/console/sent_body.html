@@ -2,20 +2,22 @@
 {% block title %}{% trans "Message text" %}{% endblock %}
 {% block crumbs %}<a href="{% url 'messages' %}">{% trans "Sent mail" %}</a><span class="sep">/</span><a href="{% url 'message_detail' m.pk %}">{{ m.subject|default:"(no subject)"|truncatechars:40 }}</a><span class="sep">/</span><span aria-current="page">{% trans "Text" %}</span>{% endblock %}
 {% block content %}
-<div class="ph"><div><h1>{{ sent.subject }}</h1><p>{% trans "The text as it was written in Compose. It is shown here, not rendered, and opening it was recorded in the audit log." %}</p></div></div>
+<div class="ph"><div><h1>{{ s.subject|default:m.subject|default:"(no subject)" }}</h1>
+  <p>{% if s.source == "archive" %}{% trans "The text as it was sent, read from the mail archive. It is shown here, not rendered. Links and codes are redacted, and opening it was recorded in the audit log." %}{% else %}{% trans "The text as it was written in Compose. It is shown here, not rendered, and opening it was recorded in the audit log." %}{% endif %}</p></div></div>
 <div class="stack">
+  {% if s.note %}<div class="callout callout-warn" role="note"><div>{% icon "info" %}</div><div><p>{{ s.note }}</p></div></div>{% endif %}
   <section class="card" aria-labelledby="sb-h"><div class="card-head"><div class="card-title" id="sb-h">{% trans "Message" %}</div></div>
   <dl class="kv card-body">
-    <dt>{% trans "From" %}</dt><dd class="mono">{{ sent.from_address }}</dd>
-    <dt>{% trans "Reply-To" %}</dt><dd class="mono">{{ sent.reply_to|default:"—" }}</dd>
-    <dt>{% trans "To" %}</dt><dd class="mono">{{ sent.to_addrs|join:", " }}</dd>
-    {% if sent.cc_addrs %}<dt>Cc</dt><dd class="mono">{{ sent.cc_addrs|join:", " }}</dd>{% endif %}
-    {% if sent.bcc_addrs %}<dt>Bcc</dt><dd class="mono">{{ sent.bcc_addrs|join:", " }}</dd>{% endif %}
-    <dt>{% trans "Sent by" %}</dt><dd>{{ sent.user_email }}</dd>
-    <dt>{% trans "Sent" %}</dt><dd>{{ sent.sent_at|date:"d M Y H:i:s" }} UTC</dd>
+    <dt>{% trans "From" %}</dt><dd class="mono">{{ s.from|default:"—" }}</dd>
+    {% if s.source == "compose" %}<dt>{% trans "Reply-To" %}</dt><dd class="mono">{{ s.reply_to|default:"—" }}</dd>{% endif %}
+    <dt>{% trans "To" %}</dt><dd class="mono">{{ s.to|default:"—" }}</dd>
+    {% if s.cc %}<dt>Cc</dt><dd class="mono">{{ s.cc }}</dd>{% endif %}
+    {% if s.bcc %}<dt>Bcc</dt><dd class="mono">{{ s.bcc }}</dd>{% endif %}
+    {% if s.sent_by %}<dt>{% trans "Sent by" %}</dt><dd>{{ s.sent_by }}</dd>{% endif %}
+    <dt>{% trans "Sent" %}</dt><dd>{{ s.sent|date:"d M Y H:i:s" }} UTC</dd>
   </dl></section>
   <section class="card" aria-labelledby="st-h"><div class="card-head"><div class="card-title" id="st-h">{% trans "Text" %}</div></div>
-  <div class="card-body"><pre class="sent-text">{{ sent.body }}</pre></div></section>
+  <div class="card-body"><pre class="sent-text">{{ s.text }}</pre></div></section>
   <div><a class="btn" href="{% url 'message_detail' m.pk %}">{% trans "Back to the message" %}</a></div>
 </div>
 {% endblock %}

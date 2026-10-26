@@ -44,12 +44,15 @@
 
 <div class="tabpanel" role="tabpanel" id="{{ pfx }}-p-bd" aria-labelledby="{{ pfx }}-t-bd" hidden>
   {% if can_sent_body %}
-    <div class="callout callout-warn" role="note"><div>{% icon "lock" %}</div><div><div class="callout-title">{% trans "The text of this message is protected" %}</div><p>{% blocktrans with d=sent_keep_days %}This message was written in Compose, which keeps its text for {{ d }} days. Opening it needs a reason and a passkey check, and is recorded in the audit log.{% endblocktrans %}</p></div></div>
+    <div class="callout callout-warn" role="note"><div>{% icon "lock" %}</div><div><div class="callout-title">{% trans "The text of this message is protected" %}</div>
+      <p>{% if text_source == "archive" %}{% blocktrans with d=archive_view_days %}This message was sent by an application and a copy is held in the mail archive. The console shows archived mail for {{ d }} days. Opening it needs a reason and a passkey check, and is recorded in the audit log. Links and codes are redacted.{% endblocktrans %}{% else %}{% blocktrans with d=sent_keep_days %}This message was written in Compose, which keeps its text for {{ d }} days. Opening it needs a reason and a passkey check, and is recorded in the audit log.{% endblocktrans %}{% endif %}</p></div></div>
     <div><a class="btn btn-primary" href="{% url 'sent_body' m.pk %}">{% trans "Open the message text" %}</a></div>
-  {% elif sent_body == "available" %}
+  {% elif text_source == "compose" or text_source == "archive" %}
     {% include "components/_empty.html" with icon="lock" title=_("The text of this message is stored") text=_("Only deliverability and security admins can open it.") %}
-  {% elif sent_body == "gone" %}
-    {% if sent_keep_days %}{% include "components/_empty.html" with icon="lock" title=_("The text of this message is no longer stored") text=_("Compose keeps the text of what it sends for a limited time, and that time has passed. The record of who sent it and what happened to it stays.") %}
+  {% elif text_source == "old" %}
+    {% include "components/_empty.html" with icon="lock" title=_("This message is older than the console shows") text=_("Archived mail is shown for a limited number of days after it was sent. The record of what happened to it stays.") %}
+  {% elif text_source == "gone" %}
+    {% if sent_keep_days %}{% include "components/_empty.html" with icon="lock" title=_("The text of this message is no longer stored") text=_("Compose keeps the text of what it sends for a limited time, and that time has passed, or the message was sent before keeping text was switched on. The record of who sent it and what happened to it stays.") %}
     {% else %}{% include "components/_empty.html" with icon="lock" title=_("The text of this message was not stored") text=_("Keeping the text of Compose mail is switched off.") %}{% endif %}
   {% elif can_body %}
     <div class="callout callout-warn" role="note"><div>{% icon "lock" %}</div><div><div class="callout-title">{% trans "Message body is protected" %}</div><p>{% trans "Opening it needs a reason and a passkey check, and is recorded in the audit log. Links and codes stay redacted." %}</p></div></div>
@@ -58,6 +61,6 @@
       <div><button class="btn btn-primary">{% trans "Open redacted body" %}</button></div>
     </form>
   {% else %}
-    {% include "components/_empty.html" with icon="lock" title=_("No body stored for this message") text=_("Only mail categories you opt in keep their content. This message has events and metadata only.") %}
+    {% include "components/_empty.html" with icon="lock" title=_("No body stored for this message") text=_("The console has no copy of this message. SES publishes events and metadata only; the text of mail sent by other applications is available when a mail archive is set up (see the README).") %}
   {% endif %}
 </div>

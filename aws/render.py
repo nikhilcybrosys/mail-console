@@ -27,6 +27,10 @@ CHECKS = {
     "__EXTERNAL_ID__": (r"[A-Za-z0-9+=,.@:/_-]{24,256}", "a secret of 24 to 256 letters, digits or + = , . @ : / _ -"),
     "__SERVICE_PRINCIPAL__": (r"[a-z0-9-]+\.amazonaws\.com", "the AWS service that runs the console, such as ec2.amazonaws.com or ecs-tasks.amazonaws.com"),
 }
+ARCHIVE_CHECKS = {
+    "__ARCHIVE_ARN__": (r"arn:aws:ses:[a-z0-9-]+:\d{12}:mailmanager-archive/a-\w{1,64}", "an SES Mail Manager archive ARN"),
+    "__ARCHIVE_KMS_KEY_ARN__": (r"arn:aws:kms:[a-z0-9-]+:\d{12}:key/[0-9a-f-]{36}", "the ARN of the KMS key that encrypts the archive"),
+}
 DMARC_CHECKS = {
     "__DMARC_QUEUE_ARN__": (r"arn:aws:sqs:[a-z0-9-]+:\d{12}:[A-Za-z0-9_-]+", "an SQS queue ARN"),
     "__DMARC_TOPIC_ARN__": (r"arn:aws:sns:[a-z0-9-]+:\d{12}:[A-Za-z0-9_-]+", "an SNS topic ARN"),
@@ -39,7 +43,13 @@ APP_ROLE_NAME = "mail-console-app"
 # Compose is opt-in: these four files are only produced when --send-email and --send-from are given.
 SEND_FILES = {"send.json", "permissions-boundary-send.json", "trust-send-role.json", "app-assume-send.json"}
 # DMARC collection by mail is opt-in too: these files are only produced when the --dmarc-* options are given.
-DMARC_FILES = {"dmarc-inbound.json", "dmarc-queue-policy.json", "dmarc-topic-policy.json", "dmarc-bucket-policy.json", "permissions-boundary-dmarc.json"}
+DMARC_FILES = {"dmarc-inbound.json", "dmarc-queue-policy.json", "dmarc-topic-policy.json", "dmarc-bucket-policy.json"}
+# Reading the sent-mail archive is opt-in too (--archive-arn and --archive-kms-key-arn).
+ARCHIVE_FILES = {"archive-read.json"}
+# Each opt-in feature may need one more narrow allowance in the console roles' permissions boundary (a boundary only caps what the
+# roles can be granted). The statements live in fragments/ and are merged into ONE extended boundary, so any combination works.
+FRAGMENTS = {"boundary-dmarc.json": "__DMARC_QUEUE_ARN__", "boundary-archive.json": "__ARCHIVE_ARN__"}
+EXTENDED_BOUNDARY = "permissions-boundary-extended.json"
 LIST_TOKENS = ("__ALLOWED_EMAILS__", "__SEND_EMAILS__", "__SEND_FROM__", "__SEND_RESOURCES__")
 CONFIG_SET = re.compile(r"[A-Za-z0-9_-]{1,64}")
 EMAIL = re.compile(r"[a-z0-9._%+-]{1,40}@([a-z0-9-]+\.)+[a-z]{2,}")  # exact, lowercase, no wildcards: SourceIdentity is matched exactly
@@ -117,6 +127,16 @@ def build_values(args):
         if ".." in dmarc["__DMARC_PREFIX__"]:
             raise SystemExit("--dmarc-prefix must not contain ..")
         values.update(dmarc)
+    archive = {"__ARCHIVE_ARN__": getattr(args, "archive_arn", ""), "__ARCHIVE_KMS_KEY_ARN__": getattr(args, "archive_kms_key_arn", "")}
+    if any(archive.values()) and not all(archive.values()):
+        raise SystemExit("The mail archive needs --archive-arn and --archive-kms-key-arn together, or neither")
+    if all(archive.values()):
+        for token, value in archive.items():
+            if not re.fullmatch(ARCHIVE_CHECKS[token][0], value):
+                raise SystemExit(f"{token}: {value!r} is not {ARCHIVE_CHECKS[token][1]}")
+        if archive["__ARCHIVE_ARN__"].split(":")[3] != args.region or archive["__ARCHIVE_KMS_KEY_ARN__"].split(":")[3] != args.region:
+            raise SystemExit("The archive and its key must be in the same region as --region")
+        values.update(archive)
     values["__APP_ROLE_ARN__"] = f"arn:aws:iam::{values['__ACCOUNT_ID__']}:role/{APP_ROLE_NAME}"
     return values
 
@@ -129,6 +149,8 @@ def render(values):
             continue  # Compose not requested: nothing about sending is rendered
         if path.name in DMARC_FILES and "__DMARC_QUEUE_ARN__" not in values:
             continue  # DMARC collection not requested: nothing about it is rendered
+        if path.name in ARCHIVE_FILES and "__ARCHIVE_ARN__" not in values:
+            continue  # the mail archive is not requested: nothing about it is rendered
         text = path.read_text()
         for token, value in values.items():
             if token in LIST_TOKENS:  # a JSON array, substituted for the whole quoted token
@@ -142,6 +164,21 @@ def render(values):
         out[path.name] = text
     # `aws sqs set-queue-attributes` wants the policy as a JSON *string* inside an attributes map.
     out["sqs-queue-attributes.json"] = json.dumps({"Policy": json.dumps(json.loads(out["sqs-queue-policy.json"]))}, indent=2) + "\n"
+    extra = []
+    for name, token in FRAGMENTS.items():
+        if token in values:
+            frag = (POLICY_DIR / "fragments" / name).read_text()
+            for t, v in values.items():
+                if t not in LIST_TOKENS:
+                    frag = frag.replace(t, v)
+            left = set(PLACEHOLDER.findall(frag))
+            if left:
+                raise SystemExit(f"fragments/{name}: unfilled placeholders {sorted(left)}")
+            extra += json.loads(frag)
+    if extra:
+        boundary = json.loads(out["permissions-boundary.json"])
+        boundary["Statement"][1:1] = extra          # after the ceiling, before the denies: order has no effect, readability only
+        out[EXTENDED_BOUNDARY] = json.dumps(boundary, indent=2) + "\n"
     if "dmarc-queue-policy.json" in out:
         out["dmarc-queue-attributes.json"] = json.dumps({"Policy": json.dumps(json.loads(out["dmarc-queue-policy.json"]))}, indent=2) + "\n"
     return out
@@ -161,6 +198,8 @@ def main(argv=None):
     ap.add_argument("--dmarc-prefix", default="", help="folder inside that bucket (default dmarc/)")
     ap.add_argument("--dmarc-rule-set", default="", help="SES receipt rule set name (default mail-console-dmarc)")
     ap.add_argument("--dmarc-rule", default="", help="SES receipt rule name (default dmarc-reports)")
+    ap.add_argument("--archive-arn", default="", help="Mail archive (optional): the SES Mail Manager archive that holds copies of sent mail")
+    ap.add_argument("--archive-kms-key-arn", default="", help="Mail archive (optional): the KMS key that encrypts that archive")
     ap.add_argument("--topic-arn", required=True)
     ap.add_argument("--queue-arn", required=True)
     ap.add_argument("--service-principal", required=True)

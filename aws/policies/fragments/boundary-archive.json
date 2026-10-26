@@ -1,0 +1,18 @@
+[
+  {
+    "Sid": "MailArchiveKeyCeiling",
+    "Effect": "Allow",
+    "Action": [
+      "kms:Decrypt",
+      "kms:GenerateDataKey",
+      "kms:DescribeKey"
+    ],
+    "Resource": "__ARCHIVE_KMS_KEY_ARN__",
+    "Condition": {
+      "StringEquals": {
+        "kms:ViaService": "ses.__REGION__.amazonaws.com",
+        "kms:CallerAccount": "__ACCOUNT_ID__"
+      }
+    }
+  }
+]
