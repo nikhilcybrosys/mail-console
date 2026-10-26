@@ -13,6 +13,7 @@ Why each safeguard is there:
 """
 import logging
 import re
+import time
 from datetime import timedelta
 from email.utils import parseaddr
 from urllib.parse import urlparse
@@ -32,6 +33,7 @@ RESCAN = timedelta(hours=1)
 LAG = timedelta(minutes=1)
 MIN_WINDOW = timedelta(seconds=2)
 MAX_ATTEMPTS = 8
+DOWNLOAD_TRIES = 5                  # S3 answers "access denied" to a fraction of requests for the same download link, and the next one works
 INCOMPLETE_SHOWN = timedelta(days=14)   # how long an incomplete window is flagged (the archive still holds the originals)
 
 
@@ -42,13 +44,21 @@ def label_name(from_header):
     return "-".join(w.capitalize() for w in words)[:60] or "Other"
 
 
+class DownloadRefused(archive.ArchiveError):
+    """The download link answered with something other than the message. `status` says what (403 and 5xx are worth trying again)."""
+
+    def __init__(self, status):
+        super().__init__("The archived message could not be downloaded.")
+        self.status = status
+
+
 def download(url, get=requests.get):
     """The original message from the short-lived link the archive gives. https only, size-capped."""
     if urlparse(url).scheme != "https":
         raise archive.ArchiveError("The archive gave a download link that is not https.")
     with get(url, timeout=30, stream=True) as resp:
         if resp.status_code != 200:
-            raise archive.ArchiveError("The archived message could not be downloaded.")
+            raise DownloadRefused(resp.status_code)
         chunks, size = [], 0
         for chunk in resp.iter_content(65536):
             chunks.append(chunk)
@@ -59,10 +69,11 @@ def download(url, get=requests.get):
 
 
 class Sync:
-    def __init__(self, reader=None, gmail=None, fetch=None):
+    def __init__(self, reader=None, gmail=None, fetch=None, sleep=time.sleep):
         self.reader = reader or archive.Reader()
         self.gmail = gmail or Gmail(Auth.from_settings(settings))
         self.fetch = fetch or download
+        self._sleep = sleep
         self.stats = {"imported": 0, "failed": 0, "skipped": 0, "windows": 0}
         self._tried = set()          # messages attempted in this pass: each is tried at most once per pass, so retries do not burn attempts
         self.incomplete = []         # (start, end) of windows that still held more messages than one search returns, even split by sender
@@ -72,13 +83,24 @@ class Sync:
     def _short(exc):
         return str(exc)[:190] if isinstance(exc, (GoogleError, archive.ArchiveError)) else exc.__class__.__name__
 
+    def _original(self, archived_message_id):
+        """The message's original bytes. A refused download (403 or a server error) is retried with a FRESH link, a few times; anything else is not."""
+        for attempt in range(DOWNLOAD_TRIES):
+            link = self.reader.mm.get_archive_message(ArchivedMessageId=archived_message_id)["MessageDownloadLink"]
+            try:
+                return self.fetch(link)
+            except DownloadRefused as exc:
+                if (exc.status != 403 and exc.status < 500) or attempt == DOWNLOAD_TRIES - 1:
+                    raise
+                self._sleep(attempt + 1)
+
     def _attempt(self, item, row):
         if item.archived_message_id in self._tried:
             return
         self._tried.add(item.archived_message_id)
         item.attempts += 1
         try:
-            raw = self.fetch(self.reader.mm.get_archive_message(ArchivedMessageId=item.archived_message_id)["MessageDownloadLink"])
+            raw = self._original(item.archived_message_id)
             if len(raw) > MAX_RAW:
                 item.state, item.detail, item.done_at = ArchiveSyncItem.SKIPPED, "larger than 10 MB, not imported", timezone.now()
                 self.stats["skipped"] += 1
