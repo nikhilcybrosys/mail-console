@@ -482,8 +482,9 @@ How it behaves:
 - **Only mail that reaches the archive** (section 10) is copied, and only from when the archive was attached to a configuration set.
 - **The credential can only insert mail and manage labels.** It cannot read, search or delete anything in the mailbox.
 - **Safe to repeat.** A record per message (metadata only, never the content) stops anything being imported twice; failures are retried a limited number
-  of times; the newest hour is rescanned each pass; a busy moment is split by time and then by sender, and if it still cannot be completed the Setup check
-  and an alert say so.
+  of times; the newest hour is rescanned each pass; a busy moment is split by time and then by sender, and if it cannot be PROVEN complete (more than 10
+  senders, one sender filling a whole search, or messages left over) the Setup check and an alert say so. Messages over 10 MB are not copied
+  automatically; they are listed in the Setup check and alerted, and can be exported from the archive by hand.
 
 **11.1 The AWS permission.** The console role needs to fetch the original message from the archive. This is one more action in `archive-read.json`
 (`ses:GetArchiveMessage`): re-render with the archive options (section 10.4) and run the `put-role-policy` command again.

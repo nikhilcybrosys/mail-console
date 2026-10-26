@@ -255,6 +255,12 @@ class FakeMM:
             else:
                 assert expr["Evaluate"]["Attribute"] == "ENVELOPE_TO"
                 hits = [r for r in hits if any(expr["Values"][0] in t for t in r["Envelope"]["To"])]
+        for cond in (kw.get("Filters") or {}).get("Unless", []):
+            expr = cond["StringExpression"]
+            assert expr["Evaluate"]["Attribute"] == "ENVELOPE_FROM" and expr["Operator"] == "CONTAINS"
+            hits = [r for r in hits if expr["Values"][0] not in r["Envelope"]["From"]]
+        for lst in ((kw.get("Filters") or {}).get("Include", []), (kw.get("Filters") or {}).get("Unless", [])):
+            assert len(lst) <= 10          # the archive's own limit on a filter list
         hits = hits[:kw["MaxResults"]]
         FakeMM.last_filters = kw.get("Filters")
         self._hits = [{k: v for k, v in r.items() if k != "t"} for r in hits]
@@ -384,6 +390,52 @@ def test_a_moment_that_one_sender_alone_fills_is_flagged_incomplete_and_never_ca
     st = ArchiveSyncState.objects.get()
     assert s.stats["imported"] == 50 and len(s.incomplete) == 1
     assert st.last_ok_at is None and st.incomplete_at == NOW and st.incomplete_windows == 1 and st.scanned_to == NOW - archive_sync.LAG   # it moves on (it must not be stuck), but says so
+
+
+def test_a_sender_hidden_beyond_the_first_results_is_still_found_by_asking_for_everything_else():
+    """The second review finding: only the senders visible in the first 50 results used to be asked about, so another sender's messages were never looked at."""
+    t = NOW - timedelta(hours=1)
+    rows = [row(i, t, "A <big@corp.example>") for i in range(50)] + [row(100 + i, t, "B <small@corp.example>") for i in range(10)]
+    mm, gm = FakeMM(rows, created=NOW - timedelta(hours=2)), FakeGmail()
+    s = sync(mm, gm)
+    s.run_once(NOW)
+    assert s.stats["imported"] == 60                       # the 10 hidden ones were found
+    assert len(s.incomplete) == 1                          # but "big" alone fills a search, so completeness cannot be proven
+
+
+def test_more_than_ten_senders_at_one_instant_are_all_imported_but_never_called_proven_complete():
+    t = NOW - timedelta(hours=1)
+    rows = [row(i, t, f"S <s{i % 25}@corp.example>") for i in range(75)]       # 25 senders, 3 messages each, 75 in one instant
+    mm, gm = FakeMM(rows, created=NOW - timedelta(hours=2)), FakeGmail()
+    s = sync(mm, gm)
+    s.run_once(NOW)
+    assert s.stats["imported"] == 75 and len(s.incomplete) == 1       # nothing lost, but the archive cannot be asked to exclude more than 10 senders, so it is not proven
+
+
+def test_ten_or_fewer_senders_at_one_instant_are_proven_complete_by_an_empty_remainder():
+    t = NOW - timedelta(hours=1)
+    rows = [row(i, t, f"S <s{i % 6}@corp.example>") for i in range(60)]       # 6 senders, 10 messages each
+    mm, gm = FakeMM(rows, created=NOW - timedelta(hours=2)), FakeGmail()
+    s = sync(mm, gm)
+    s.run_once(NOW)
+    assert s.stats["imported"] == 60 and s.incomplete == [] and ArchiveSyncState.objects.get().last_ok_at == NOW
+
+
+def test_a_third_sender_left_over_after_the_first_look_is_imported_and_the_window_is_not_proven_complete():
+    t = NOW - timedelta(hours=1)
+    rows = [row(i, t, "A <a@corp.example>") for i in range(30)] + [row(100 + i, t, "B <b@corp.example>") for i in range(30)] + [row(200 + i, t, "C <c@corp.example>") for i in range(10)]
+    mm, gm = FakeMM(rows, created=NOW - timedelta(hours=2)), FakeGmail()
+    s = sync(mm, gm)
+    s.run_once(NOW)
+    assert s.stats["imported"] == 70 and len(s.incomplete) == 1       # the first 50 show only A and B; C is found by asking for the rest, and flagged
+
+
+def test_the_exclusion_filter_is_sent_to_the_archive_search_with_at_most_ten_conditions():
+    mm = FakeMM([row(1, NOW)])
+    r = archive.Reader(mm=mm, archive_id="a-1", sleep=lambda s: None)
+    r._search(NOW - timedelta(minutes=1), NOW + timedelta(minutes=1), exclude_senders=[f"s{i}@x" for i in range(15)])
+    unless = FakeMM.last_filters["Unless"]
+    assert len(unless) == 10 and "Include" not in FakeMM.last_filters and unless[0]["StringExpression"]["Evaluate"]["Attribute"] == "ENVELOPE_FROM"
 
 
 def test_an_incomplete_window_shows_in_the_setup_check_and_opens_an_alert_for_two_weeks_only():
@@ -551,6 +603,19 @@ def test_the_setup_check_distinguishes_messages_waiting_for_a_retry_from_ones_th
     assert by_key(setupcheck._archive_sync_checks(NOW, OkGmail()))["mfail"].status == "warn"
     ArchiveSyncItem.objects.create(archived_message_id="b", state="failed", attempts=archive_sync.MAX_ATTEMPTS)
     assert by_key(setupcheck._archive_sync_checks(NOW, OkGmail()))["mfail"].status == "fail"
+
+
+def test_messages_too_large_to_copy_are_shown_in_the_setup_check_and_alerted_not_silently_dropped():
+    now = datetime.now(timezone.utc)
+    ArchiveSyncItem.objects.create(archived_message_id="big1", state="skipped", detail="larger than 10 MB, not imported", attempts=1)
+    ArchiveSyncState.objects.create(pk=1, last_ok_at=now)
+    c = by_key(setupcheck._archive_sync_checks(now, OkGmail()))
+    assert c["mskip"].status == "warn" and "1 message(s) are too large" in c["mskip"].title
+    alerts.evaluate()
+    assert Alert.objects.filter(key="archive_sync_skipped", resolved_at__isnull=True).count() == 1
+    ArchiveSyncItem.objects.update(state="imported")
+    alerts.evaluate()
+    assert not Alert.objects.filter(key="archive_sync_skipped", resolved_at__isnull=True).exists()
 
 
 def test_the_group_appears_in_the_setup_check_only_when_the_copy_is_on(settings):

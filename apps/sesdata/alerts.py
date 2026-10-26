@@ -118,6 +118,9 @@ def evaluate(now=None, silent_minutes=None):
     _set("archive_sync_incomplete", "warn", "Some archived messages may not have been copied into the mailbox",
          "A moment in the archive held more messages than one search can return. See the Setup check, Mailbox copy.",
          bool(settings.ARCHIVE_SYNC_ENABLED and state is not None and state.incomplete_at is not None and now - state.incomplete_at < archive_sync.INCOMPLETE_SHOWN))
+    big = ArchiveSyncItem.objects.filter(state=ArchiveSyncItem.SKIPPED).count() if settings.ARCHIVE_SYNC_ENABLED else 0
+    _set("archive_sync_skipped", "warn", f"{big} archived message(s) are too large to copy into the mailbox",
+         "Messages over 10 MB are not copied automatically. See the Setup check, Mailbox copy.", bool(big))
     stuck = ArchiveSyncItem.objects.filter(state=ArchiveSyncItem.FAILED, attempts__gte=archive_sync.MAX_ATTEMPTS).count() if settings.ARCHIVE_SYNC_ENABLED else 0
     _set("archive_sync_failed", "warn", f"{stuck} archived message(s) could not be copied into the mailbox",
          "They were tried several times and gave up. See the Setup check, Mailbox copy.", bool(stuck))

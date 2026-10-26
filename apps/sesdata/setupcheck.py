@@ -410,6 +410,10 @@ def _archive_sync_checks(now, gmail=None):
                          "Look at the reasons in the database (ArchiveSyncItem.detail); the archive keeps the originals for its retention period."))
     elif waiting:
         out.append(Check(g, "mfail", f"{waiting} message(s) are waiting to be retried", WARN, "A copy failed and will be tried again."))
+    skipped = ArchiveSyncItem.objects.filter(state=ArchiveSyncItem.SKIPPED).count()
+    if skipped:
+        out.append(Check(g, "mskip", f"{skipped} message(s) are too large to copy", WARN, "Messages over 10 MB are not copied automatically.",
+                         "Open them in the archive (AWS console, Mail Manager) and export them by hand if you need them in the mailbox."))
     out.append(Check(g, "mcount", "Messages copied so far", INFO, str(ArchiveSyncItem.objects.filter(state=ArchiveSyncItem.IMPORTED).count())))
     return out
 

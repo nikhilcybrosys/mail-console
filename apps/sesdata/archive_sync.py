@@ -120,18 +120,33 @@ class Sync:
         if end - start > MIN_WINDOW:
             mid = start + (end - start) / 2
             return self._union(self._rows(start, mid), self._rows(mid, end))
-        # Too many messages in the smallest window to tell apart by time: ask for each sender seen there on its own. If a sender alone
-        # still fills a search, messages may be missing: that is recorded and shown, never reported as a clean pass.
-        senders = sorted({(r.get("Envelope") or {}).get("From") or parseaddr(r.get("From") or "")[1] for r in rows} - {""})
-        parts = [rows]
-        for sender in senders:
+        # Too many messages in the smallest window to tell apart by time. Ask for each sender seen there on its own, then for everything
+        # that is NOT from those senders. All of it is imported, but the window is only called complete when that is PROVEN: at most 10
+        # senders, none of them filling a search by itself, and nothing else left over. (With more than 10 senders something is always
+        # left over, because the archive can exclude no more than 10 in one search.) In every other case it is recorded as incomplete, shown in the Setup check and alerted, never reported as a clean
+        # pass. (Excluding a sender also excludes any address containing it as text; a freak overlap like that can hide a sender.)
+        asked = self._senders(rows)
+        parts, proven = [rows], True
+        for sender in asked:
             part = self.reader._search(start, end, sender=sender)
             parts.append(part)
-            if len(part) >= archive.MAX_RESULTS:
-                self.incomplete.append((start, end))
-        if not senders:
+            proven = proven and len(part) < archive.MAX_RESULTS
+        rest = self.reader._search(start, end, exclude_senders=asked)       # the reader clips this to what the archive accepts (10)
+        if rest:
+            parts.append(rest)
+            proven = False      # something was left over: the first look missed a sender, so completeness cannot be shown
+        if not proven:
             self.incomplete.append((start, end))
         return self._union(*parts)
+
+    @staticmethod
+    def _senders(rows):
+        out = []
+        for r in rows:
+            s = (r.get("Envelope") or {}).get("From") or r.get("From") or ""
+            if s and s not in out:
+                out.append(s)
+        return out
 
     def retry_failed(self):
         for item in ArchiveSyncItem.objects.filter(state=ArchiveSyncItem.FAILED, attempts__lt=MAX_ATTEMPTS).order_by("first_seen")[:200]:

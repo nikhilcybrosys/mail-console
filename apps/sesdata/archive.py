@@ -25,6 +25,7 @@ log = logging.getLogger(__name__)
 WINDOW_BEFORE = timedelta(minutes=5)     # an archived copy is received at about the time the message is sent
 WINDOW_AFTER = timedelta(minutes=30)
 MAX_RESULTS = 50
+MAX_CONDITIONS = 10                      # the archive accepts at most this many conditions in one filter list
 POLL_SECONDS = 2
 MAX_TEXT = 200_000                       # characters shown; longer text is cut with a note
 _ID = re.compile(r"[A-Za-z0-9._=+-]{1,200}")
@@ -54,11 +55,13 @@ class Reader:
         self._sleep, self.timeout = sleep, timeout
 
     # -------------------------------------------------------------- find
-    def _search(self, start, end, recipient=None, sender=None):
+    def _search(self, start, end, recipient=None, sender=None, exclude_senders=()):
         kw = {"ArchiveId": self.archive_id, "FromTimestamp": start, "ToTimestamp": end, "MaxResults": MAX_RESULTS}
-        conditions = [(attr, value) for attr, value in (("ENVELOPE_TO", recipient), ("ENVELOPE_FROM", sender)) if value]
-        if conditions:
-            kw["Filters"] = {"Include": [{"StringExpression": {"Evaluate": {"Attribute": a}, "Operator": "CONTAINS", "Values": [v[:2048]]}} for a, v in conditions]}
+        cond = lambda a, v: {"StringExpression": {"Evaluate": {"Attribute": a}, "Operator": "CONTAINS", "Values": [v[:2048]]}}  # noqa: E731
+        include = [cond(a, v) for a, v in (("ENVELOPE_TO", recipient), ("ENVELOPE_FROM", sender)) if v]
+        unless = [cond("ENVELOPE_FROM", s) for s in exclude_senders][:MAX_CONDITIONS]
+        if include or unless:
+            kw["Filters"] = {**({"Include": include} if include else {}), **({"Unless": unless} if unless else {})}
         search_id = self.mm.start_archive_search(**kw)["SearchId"]
         waited = 0
         while True:
