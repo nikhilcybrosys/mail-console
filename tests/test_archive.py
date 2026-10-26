@@ -451,6 +451,9 @@ def test_mail_with_no_category_row_follows_the_global_settings(arch):
     ("Open https://app.example/go?a=1#frag-SECRET1234567", "SECRET1234567"),                            # query and fragment
     ("Token eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dBjftJeZ4CVPmB92K27uhbUJU1p1r_wW1gFWFOEjXk here", "eyJzdWIi"),
     ("Download https://files.example/d/abcdefghij.klmnopqrst.uvwxyz0123.pdf now", "abcdefghij.klmnop"),   # dots inside the opaque run
+    ("Open https://app.example//Zm9vYmFyYmF6cXV4MTIzNDU2Nzg5MA now", "Zm9vYmFy"),                          # empty first path segment: a double slash
+    ("Open https://app.example/a//Zm9vYmFyYmF6cXV4MTIzNDU2Nzg5MA now", "Zm9vYmFy"),                        # double slash inside the path
+    ("Open https://app.example///Zm9vYmFyYmF6cXV4MTIzNDU2Nzg5MA now", "Zm9vYmFy"),                         # triple slash
 ])
 def test_more_ways_of_hiding_a_secret_in_a_link_are_masked(raw, gone):
     out = archive.redact_for_display(raw)
