@@ -354,10 +354,31 @@ def _dmarc_checks(now, sqs_client):
     return out
 
 
-def run_checks(region, *, user=None, sqs_client=None, now=None):
+def _archive_checks(mm_client):
+    """Only when a mail archive is configured: can the console read it, and is it active?"""
+    g, out = "Mail archive", []
+    try:
+        if mm_client is None:
+            from . import archive
+            mm_client = archive.client()
+        info = mm_client.get_archive(ArchiveId=settings.MAIL_ARCHIVE_ID)
+    except Exception as exc:  # noqa: BLE001: reported, not raised; this is a diagnostic page
+        return [Check(g, "arch", "Cannot read the mail archive", FAIL, f"AWS answered: {_short(exc)}.",
+                      "Check MC_MAIL_ARCHIVE_ID and that the app role has the archive-read policy (aws/policies/archive-read.json).")]
+    state = info.get("ArchiveState", "")
+    retention = (info.get("Retention") or {}).get("RetentionPeriod", "").replace("_", " ").lower()
+    if state == "ACTIVE":
+        out.append(Check(g, "arch", "Mail archive is active", OK,
+                         f"AWS keeps archived mail for {retention or 'its retention period'}; the console shows it for {settings.ARCHIVE_VIEW_DAYS} days after sending."))
+    else:
+        out.append(Check(g, "arch", "Mail archive is not active", WARN, f"State: {state or 'unknown'}.", "An archive that is pending deletion or paused keeps no new mail."))
+    return out
+
+
+def run_checks(region, *, user=None, sqs_client=None, now=None, mailmanager_client=None):
     now = now or timezone.now()
     ses, idents = _ses_checks(region, now, user)
-    return ses + _pipeline_checks(region, idents, now, sqs_client) + _access_checks(user) + (_dmarc_checks(now, sqs_client) if settings.DMARC_ENABLED else []) + (_compose_checks(region) if settings.SEND_ENABLED else []) + _hardening_checks()
+    return ses + _pipeline_checks(region, idents, now, sqs_client) + _access_checks(user) + (_dmarc_checks(now, sqs_client) if settings.DMARC_ENABLED else []) + (_compose_checks(region) if settings.SEND_ENABLED else []) + (_archive_checks(mailmanager_client) if settings.MAIL_ARCHIVE_ID else []) + _hardening_checks()
 
 
 def grouped(checks):

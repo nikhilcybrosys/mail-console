@@ -2,8 +2,10 @@
 {% block title %}{% trans "Open the message text" %}{% endblock %}
 {% block crumbs %}<a href="{% url 'messages' %}">{% trans "Sent mail" %}</a><span class="sep">/</span><a href="{% url 'message_detail' m.pk %}">{{ m.subject|default:"(no subject)"|truncatechars:40 }}</a><span class="sep">/</span><span aria-current="page">{% trans "Text" %}</span>{% endblock %}
 {% block content %}
-<div class="ph"><div><h1>{% trans "Open the message text" %}</h1><p>{% blocktrans with d=keep_days %}This message was written in Compose, which keeps its text for {{ d }} days. Opening it is recorded in the audit log.{% endblocktrans %}</p></div></div>
+<div class="ph"><div><h1>{% trans "Open the message text" %}</h1>
+  <p>{% if source == "archive" %}{% blocktrans with d=view_days %}This message was sent by an application and a copy is held in the mail archive. The console shows archived mail for {{ d }} days after it was sent. Links and codes are redacted, and opening it is recorded in the audit log.{% endblocktrans %}{% else %}{% blocktrans with d=keep_days %}This message was written in Compose, which keeps its text for {{ d }} days. Opening it is recorded in the audit log.{% endblocktrans %}{% endif %}</p></div></div>
 <div class="stack">
+  {% if error %}<div class="callout callout-err" role="alert"><div>{% icon "triangle-alert" %}</div><div><div class="callout-title">{% trans "The text could not be opened" %}</div><p>{{ error }}</p></div></div>{% endif %}
   <section class="card" aria-labelledby="ask-h"><div class="card-head"><div class="card-title" id="ask-h">{% trans "Reason" %}</div></div>
   <form class="card-body stack" method="post" action="{% url 'sent_body' m.pk %}">{% csrf_token %}
     <div class="field"><label class="label" for="ask-reason">{% trans "Why do you need to read this email?" %}</label><input class="input" id="ask-reason" name="reason" required autofocus placeholder="{% trans 'For example: customer asked what we sent' %}"></div>

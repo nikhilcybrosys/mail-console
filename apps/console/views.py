@@ -1,4 +1,5 @@
 """Console views. Every view names the capability it needs; step-up is demanded for writes and reveals."""
+import logging
 import re
 from datetime import timedelta
 
@@ -26,7 +27,7 @@ from apps.compose.models import SentMail
 from apps.core.rbac import ROLES, has_capability, require_capability
 from apps.core.scope import scoped_alerts, scoped_identities, scoped_suppression, scoped_suppression_changes
 from apps.core.templatetags.ui import STATES
-from apps.sesdata import channels, metrics, setupcheck, sync
+from apps.sesdata import archive, channels, metrics, setupcheck, sync
 from apps.sesdata.events import SUPPRESSION_SUBTYPES  # noqa: F401  (re-exported for templates/tests)
 from apps.sesdata.explain import explain
 from apps.sesdata.models import (AccountSnapshot, Alert, BodyAccessLog, ConfigSetSnapshot, DnsCheckResult, IdentitySnapshot,
@@ -36,6 +37,8 @@ from . import exports
 
 _MSG_ID = re.compile(r"^[0-9a-zA-Z-]{12,}$")
 PAGE = 50
+
+log = logging.getLogger(__name__)
 
 
 def _region(request):
@@ -309,6 +312,18 @@ def saved_view_delete(request, pk):
     return redirect("messages")
 
 
+def _text_source(msg):
+    """Where the text of this message could come from: ("compose", SentMail) for mail written in Compose and still stored,
+    ("archive", None) for mail an SES archive holds a copy of and that is newer than MC_ARCHIVE_VIEW_DAYS, ("old", None) for archived mail
+    older than that, ("gone", sent) for Compose mail whose stored text has been blanked, or (None, None)."""
+    sent = SentMail.objects.filter(ses_message_id=msg.ses_message_id).first()
+    if sent and sent.body:
+        return "compose", sent
+    if settings.MAIL_ARCHIVE_ID:
+        return ("archive" if msg.sent_at >= timezone.now() - timedelta(days=settings.ARCHIVE_VIEW_DAYS) else "old"), None
+    return ("gone" if sent else None), sent
+
+
 def _message_context(request, pk):
     msg = get_object_or_404(_scoped(Message.objects.all(), request.user), pk=pk)
     timeline = []
@@ -316,11 +331,10 @@ def _message_context(request, pk):
         what, todo = explain(e.event_type, _detail(e))
         timeline.append({"e": e, "what": what, "todo": todo, "detail": _detail(e)})
     recipients = list(msg.recipients.all())
-    sent = SentMail.objects.filter(ses_message_id=msg.ses_message_id).only("body").first()  # mail that was sent through Compose
-    sent_body = ("available" if sent.body else "gone") if sent else ""
+    source, _ = _text_source(msg)
     return {
-        "sent_body": sent_body, "sent_keep_days": settings.SEND_KEEP_BODY_DAYS,
-        "can_sent_body": sent_body == "available" and has_capability(request.user, "reveal_sent_body"),
+        "text_source": source or "", "sent_keep_days": settings.SEND_KEEP_BODY_DAYS, "archive_view_days": settings.ARCHIVE_VIEW_DAYS,
+        "can_sent_body": source in ("compose", "archive") and has_capability(request.user, "reveal_sent_body"),
         "m": msg, "timeline": timeline, "recipients": recipients,
         "can_body": bool(msg.body_ref) and has_capability(request.user, "reveal_body"),
         "category": MailCategory.objects.filter(name=msg.mail_category).first(),
@@ -370,21 +384,40 @@ def message_body(request, pk):
 
 @require_capability("reveal_sent_body", step_up=True)
 def sent_body(request, pk):
-    """The text of a message that was sent through Compose. GET asks for the reason (after the passkey check, which sends the person
-    back here with a GET); POST shows the text. A reason is mandatory and every view is audited. The text is escaped by the
-    template: it is shown, never rendered."""
+    """The text of a message. Two sources: mail written in Compose (kept by the console for a while) and mail an SES archive holds a copy
+    of (read from AWS on demand). GET asks for the reason (after the passkey check, which sends the person back here with a GET); POST
+    shows the text. A reason is mandatory and every view is audited. Archived text has links and codes redacted. The text is escaped by
+    the template: it is shown, never rendered."""
     msg = get_object_or_404(_scoped(Message.objects.all(), request.user), pk=pk)  # outside your domains: 404, as for the rest of the message
-    sent = SentMail.objects.filter(ses_message_id=msg.ses_message_id).first()
-    if sent is None or not sent.body:
-        return HttpResponseBadRequest("The text of this message is not stored")
+    source, sent = _text_source(msg)
+    if source not in ("compose", "archive"):
+        return HttpResponseBadRequest("The text of this message is not available")
+    ask = {"m": msg, "source": source, "keep_days": settings.SEND_KEEP_BODY_DAYS, "view_days": settings.ARCHIVE_VIEW_DAYS}
     if request.method != "POST":
-        return render(request, "console/sent_body_ask.html", {"m": msg, "keep_days": settings.SEND_KEEP_BODY_DAYS})
+        return render(request, "console/sent_body_ask.html", ask)
     reason = (request.POST.get("reason") or "").strip()
     if not reason:
         return HttpResponseBadRequest("A reason is required")
+    if source == "compose":
+        shown = {"source": "compose", "from": sent.from_address, "reply_to": sent.reply_to, "to": ", ".join(sent.to_addrs), "cc": ", ".join(sent.cc_addrs),
+                 "bcc": ", ".join(sent.bcc_addrs), "subject": sent.subject, "sent_by": sent.user_email, "sent": sent.sent_at, "text": sent.body, "note": ""}
+    else:
+        try:
+            reader = archive.Reader()
+            row = reader.find(msg.ses_message_id, msg.sent_at, msg.recipients.values_list("address", flat=True).first())
+            text, note = archive.readable(reader.content(row["ArchivedMessageId"]))
+        except archive.ArchiveError as exc:
+            record("sent_body.unavailable", target=f"message#{msg.pk}", request=request, details={"source": "archive", "why": type(exc).__name__})
+            return render(request, "console/sent_body_ask.html", {**ask, "error": str(exc)})
+        except Exception as exc:  # noqa: BLE001: AWS or network trouble: say so plainly, log only the kind
+            log.warning("archive read failed (%s)", type(exc).__name__)
+            record("sent_body.unavailable", target=f"message#{msg.pk}", request=request, details={"source": "archive", "why": type(exc).__name__})
+            return render(request, "console/sent_body_ask.html", {**ask, "error": "The archive could not be read right now. Check that the console is allowed to read it (Setup check), then try again."})
+        shown = {"source": "archive", "from": row.get("From", ""), "reply_to": "", "to": row.get("To", ""), "cc": row.get("Cc", ""), "bcc": "",
+                 "subject": row.get("Subject", ""), "sent_by": "", "sent": msg.sent_at, "text": text, "note": note}
     BodyAccessLog.objects.create(user_email=request.user.email, message=msg, reason=reason)
-    record("sent_body.view", target=f"message#{msg.pk}", request=request, details={"reason": reason[:200], "category": msg.mail_category})
-    return render(request, "console/sent_body.html", {"m": msg, "sent": sent})
+    record("sent_body.view", target=f"message#{msg.pk}", request=request, details={"reason": reason[:200], "category": msg.mail_category, "source": source})
+    return render(request, "console/sent_body.html", {"m": msg, "s": shown})
 
 
 # ------------------------------------------------------------------ suppression

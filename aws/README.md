@@ -344,7 +344,7 @@ list the bucket, or send mail. Without `s3:ListBucket`, S3 answers "access denie
 so a notification for mail that has already expired is retried and then ends in the dead-letter queue, which is harmless.
 
 ```bash
-aws iam create-policy-version --policy-arn "$BOUNDARY_ARN" --policy-document file://aws-rendered/permissions-boundary-dmarc.json --set-as-default
+aws iam create-policy-version --policy-arn "$BOUNDARY_ARN" --policy-document file://aws-rendered/permissions-boundary-extended.json --set-as-default
 aws iam put-role-policy --role-name mail-console-app --policy-name dmarc-inbound --policy-document file://aws-rendered/dmarc-inbound.json
 ```
 
@@ -392,6 +392,70 @@ second worker process:
 
 The **Setup check** then has a "DMARC collection" group (queue reachable, dead-letter queue, providers listed, last report received), the DMARC page
 has a "Collection by mail" card, and an alert opens if reports that used to arrive stop for 3 days.
+
+## 10. Read the text of mail sent by other applications (optional)
+
+Off by default. SES publishes no message content in its events, so the console normally shows what happened to a message but never what it
+said. SES can, however, copy every message sent through a configuration set into an **SES Mail Manager archive**. With the steps below an
+admin can open the **Body** tab of a message in Sent mail and read that copy, with a reason and a passkey check, and every opening is audited.
+
+What to know before you switch it on:
+
+- **The archive holds the full text of everything sent through the configuration sets you attach it to**, including sign-in, invitation and
+  password-reset links and one-time codes. Attach it only to sets whose mail you are prepared to keep that way.
+- **AWS's shortest retention is three months.** Archives cannot delete single messages; they expire everything after the retention period.
+  The console shows archived mail for `MC_ARCHIVE_VIEW_DAYS` (default 30) after it was sent and refuses to open anything older, but that
+  limits what the console shows, not what AWS stores. Anyone with permission to read the archive in AWS can read all of it.
+- **The console redacts what it shows:** HTML is turned into plain text (link targets are dropped), query strings and long opaque path segments
+  in links are masked, and one-time codes and keys are masked. Redaction is best-effort: it removes what it recognises.
+- **Encrypt the archive with its own KMS key** and keep the key policy narrow (below). Nothing from the archive is stored in the console's
+  database.
+- **Which mail is copied:** SES documents archiving for mail sent through the `SendEmail` and `SendBulkEmail` API operations. Check that mail sent
+  through the SMTP interface is copied too (send one and look for it) before relying on it for an application that sends over SMTP. A
+  message with no copy shows "No archived copy of this message was found".
+- **Cost:** Mail Manager archiving is billed by volume and retention (see the SES pricing page); at a few messages a day it is small.
+
+**10.1 The key.** Put this in a file (replace the account id) and create the key:
+
+```bash
+cat > archive-kms-policy.json <<JSON
+{"Version":"2012-10-17","Id":"mail-archive-key","Statement":[
+ {"Sid":"EnableIamPoliciesInThisAccount","Effect":"Allow","Principal":{"AWS":"arn:aws:iam::<account>:root"},"Action":"kms:*","Resource":"*"},
+ {"Sid":"AllowSesToEncryptAndDecryptTheArchive","Effect":"Allow","Principal":{"Service":"ses.amazonaws.com"},
+  "Action":["kms:GenerateDataKey","kms:Decrypt","kms:DescribeKey"],"Resource":"*","Condition":{"StringEquals":{"aws:SourceAccount":"<account>"}}}]}
+JSON
+KEY_ARN=$(aws kms create-key --region ap-south-1 --description "Encrypts the archive of sent mail" --policy file://archive-kms-policy.json --query KeyMetadata.Arn --output text)
+aws kms create-alias --region ap-south-1 --alias-name alias/mail-archive --target-key-id "$KEY_ARN"
+```
+
+**10.2 The archive** (three months is the minimum retention):
+
+```bash
+ARCHIVE_ID=$(aws mailmanager create-archive --region ap-south-1 --archive-name sent-mail --retention RetentionPeriod=THREE_MONTHS --kms-key-arn "$KEY_ARN" --query ArchiveId --output text)
+ARCHIVE_ARN=$(aws mailmanager get-archive --region ap-south-1 --archive-id "$ARCHIVE_ID" --query ArchiveArn --output text)
+```
+
+**10.3 Attach it to the configuration sets whose mail you want to read** (repeat per set; SES then copies each new message sent through it):
+
+```bash
+aws sesv2 put-configuration-set-archiving-options --region ap-south-1 --configuration-set-name my-first-configuration-set --archive-arn "$ARCHIVE_ARN"
+```
+
+**10.4 Let the console role read it.** Render with the archive options (both are required, and both must be in `--region`). This adds one
+statement to the permissions boundary (decrypt with that one key, only through SES) and gives the app role two statements (read that one
+archive, decrypt with that one key). It cannot create, change or delete anything, and still cannot send mail:
+
+```bash
+python3 aws/render.py ... --archive-arn "$ARCHIVE_ARN" --archive-kms-key-arn "$KEY_ARN"
+aws iam create-policy-version --policy-arn "$BOUNDARY_ARN" --policy-document file://aws-rendered/permissions-boundary-extended.json --set-as-default
+aws iam put-role-policy --role-name mail-console-app --policy-name archive-read --policy-document file://aws-rendered/archive-read.json
+```
+
+If you also use section 9, `permissions-boundary-extended.json` carries both additions: create ONE new boundary version from it.
+
+**10.5 The console.** Set `MC_MAIL_ARCHIVE_ID` to `$ARCHIVE_ID` (the id, like `a-abc123...`) and optionally `MC_ARCHIVE_VIEW_DAYS`, then restart the web
+process. The **Setup check** gets a "Mail archive" group. A search of the archive takes a few seconds, so opening a message's text pauses
+briefly.
 
 ## Changing or removing things
 Remove the SES event destination before deleting the topic, and delete the subscription before the queue. Delete the

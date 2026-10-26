@@ -112,7 +112,7 @@ def test_only_the_send_role_policy_in_the_whole_directory_allows_any_send_action
         for s in statements(pol, "Allow"):
             for a in as_list(s["Action"]):
                 grants_send = any(fnmatch.fnmatch(send, a) for send in SEND_ACTIONS)
-                if path.name in {"permissions-boundary.json", "permissions-boundary-dmarc.json"} and a == "ses:*":
+                if path.name == "permissions-boundary.json" and a == "ses:*":
                     continue  # the original boundary's ceiling, overridden by its explicit Deny (tested above)
                 assert not grants_send or path.name in {"send.json", "permissions-boundary-send.json"}, (path.name, a)
 

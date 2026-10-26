@@ -51,16 +51,20 @@ def test_the_app_role_extra_policy_is_one_queue_and_one_folder_read_and_cannot_s
     assert all("*" not in r.replace("/dmarc/*", "") for s in pol["Statement"] for r in as_list(s["Resource"]))
 
 
-def test_the_boundary_with_dmarc_is_the_original_plus_exactly_one_read_only_ceiling():
-    base, extra = load("permissions-boundary.json")["Statement"], load("permissions-boundary-dmarc.json")["Statement"]
+def test_the_extended_boundary_with_dmarc_is_the_original_plus_exactly_one_read_only_ceiling():
+    files = rendered()
+    base, extra = json.loads(files["permissions-boundary.json"])["Statement"], json.loads(files[render.EXTENDED_BOUNDARY])["Statement"]
     added = [s for s in extra if s not in base]
     assert [s for s in base if s not in extra] == [] and len(added) == 1
     (s,) = added
-    assert (s["Effect"], s["Action"], s["Resource"]) == ("Allow", "s3:GetObject", "arn:aws:s3:::__DMARC_BUCKET__/__DMARC_PREFIX__*")
+    assert (s["Effect"], s["Action"], s["Resource"]) == ("Allow", "s3:GetObject", "arn:aws:s3:::mc-dmarc-bucket/dmarc/*")
     assert {s["Sid"] for s in base if s["Effect"] == "Deny"} <= {s["Sid"] for s in extra if s["Effect"] == "Deny"}   # every original deny is still there
-    # the send ban and the region and escalation denies survive in the rendered file too
-    denied = {a for st in statements(json.loads(rendered()["permissions-boundary-dmarc.json"]), "Deny") for a in as_list(st["Action"])}
+    denied = {a for st in statements(json.loads(files[render.EXTENDED_BOUNDARY]), "Deny") for a in as_list(st["Action"])}
     assert set(SEND_ACTIONS) <= denied and "ses:Send*" in denied and "iam:CreateAccessKey" in denied
+
+
+def test_without_dmarc_or_archive_there_is_no_extended_boundary():
+    assert render.EXTENDED_BOUNDARY not in render.render(render.build_values(render.argparse.Namespace(**VALUES)))
 
 
 def test_only_the_named_receipt_rule_may_store_mail_or_publish_and_the_bucket_is_tls_only():

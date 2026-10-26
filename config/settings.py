@@ -260,7 +260,15 @@ if DMARC_ENABLED:
 EXPECTED_SNS_TOPIC_ARNS = [a for a in env("MC_EXPECTED_SNS_TOPIC_ARNS", "").split(",") if a]
 AUDIT_BUCKET = env("MC_AUDIT_BUCKET", "")
 CONTENT_BUCKET = env("MC_CONTENT_BUCKET", "")
-MAIL_ARCHIVE_ID = env("MC_MAIL_ARCHIVE_ID", "")
+# An SES Mail Manager archive that SES copies sent mail into (attached to configuration sets in AWS). When set, admins can read the
+# text of mail sent by other applications, for ARCHIVE_VIEW_DAYS after it was sent (AWS keeps archived mail for the archive's own
+# retention period, at least 3 months; this only limits what the console will show). See aws/README.md.
+MAIL_ARCHIVE_ID = env("MC_MAIL_ARCHIVE_ID", "").strip()
+ARCHIVE_VIEW_DAYS = int(env_float("MC_ARCHIVE_VIEW_DAYS", 30))
+if MAIL_ARCHIVE_ID and not re.fullmatch(r"a-\w{1,64}", MAIL_ARCHIVE_ID):
+    raise ImproperlyConfigured("MC_MAIL_ARCHIVE_ID must be the id of an SES Mail Manager archive (it looks like a-abc123...).")
+if not 1 <= ARCHIVE_VIEW_DAYS <= 3650:
+    raise ImproperlyConfigured("MC_ARCHIVE_VIEW_DAYS must be between 1 and 3650.")
 
 # --- Business rules (tunable, but defaults are deliberate) ------------------------
 BULK_SUPPRESSION_APPROVAL_THRESHOLD = 50

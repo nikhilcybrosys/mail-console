@@ -1,0 +1,8 @@
+[
+  {
+    "Sid": "DmarcReportMailReadCeiling",
+    "Effect": "Allow",
+    "Action": "s3:GetObject",
+    "Resource": "arn:aws:s3:::__DMARC_BUCKET__/__DMARC_PREFIX__*"
+  }
+]
