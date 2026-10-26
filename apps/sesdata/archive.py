@@ -54,10 +54,11 @@ class Reader:
         self._sleep, self.timeout = sleep, timeout
 
     # -------------------------------------------------------------- find
-    def _search(self, start, end, recipient=None):
+    def _search(self, start, end, recipient=None, sender=None):
         kw = {"ArchiveId": self.archive_id, "FromTimestamp": start, "ToTimestamp": end, "MaxResults": MAX_RESULTS}
-        if recipient:
-            kw["Filters"] = {"Include": [{"StringExpression": {"Evaluate": {"Attribute": "ENVELOPE_TO"}, "Operator": "CONTAINS", "Values": [recipient[:2048]]}}]}
+        conditions = [(attr, value) for attr, value in (("ENVELOPE_TO", recipient), ("ENVELOPE_FROM", sender)) if value]
+        if conditions:
+            kw["Filters"] = {"Include": [{"StringExpression": {"Evaluate": {"Attribute": a}, "Operator": "CONTAINS", "Values": [v[:2048]]}} for a, v in conditions]}
         search_id = self.mm.start_archive_search(**kw)["SearchId"]
         waited = 0
         while True:

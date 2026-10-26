@@ -270,6 +270,33 @@ if MAIL_ARCHIVE_ID and not re.fullmatch(r"a-\w{1,64}", MAIL_ARCHIVE_ID):
 if not 1 <= ARCHIVE_VIEW_DAYS <= 3650:
     raise ImproperlyConfigured("MC_ARCHIVE_VIEW_DAYS must be between 1 and 3650.")
 
+# --- Permanent copy of archived mail in a Google Workspace mailbox (OFF unless MC_ARCHIVE_SYNC_MAILBOX is set) ----------------------
+# A worker copies every message that appears in the SES archive into this mailbox (Gmail API, insert only: nothing is sent), under a
+# label per sending address, outside the Inbox. The mailbox then keeps them for as long as you keep the mailbox. See aws/README.md.
+ARCHIVE_SYNC_MAILBOX = env("MC_ARCHIVE_SYNC_MAILBOX", "").strip().lower()
+ARCHIVE_SYNC_LABEL_ROOT = env("MC_ARCHIVE_SYNC_LABEL_ROOT", "Sent via SES").strip()
+ARCHIVE_SYNC_INTERVAL = int(env_float("MC_ARCHIVE_SYNC_INTERVAL", 300))
+GOOGLE_SERVICE_ACCOUNT_FILE = env("MC_GOOGLE_SERVICE_ACCOUNT_FILE", "").strip()       # a JSON key file (mount it as a secret, never commit it)
+GOOGLE_OAUTH_CLIENT_ID = env("MC_GOOGLE_OAUTH_CLIENT_ID", "").strip()
+GOOGLE_OAUTH_CLIENT_SECRET = env("MC_GOOGLE_OAUTH_CLIENT_SECRET", "")
+GOOGLE_OAUTH_REFRESH_TOKEN = env("MC_GOOGLE_OAUTH_REFRESH_TOKEN", "")
+ARCHIVE_SYNC_ENABLED = bool(ARCHIVE_SYNC_MAILBOX)
+if ARCHIVE_SYNC_ENABLED:
+    _sp = []
+    if not re.fullmatch(r"[a-z0-9._%+-]{1,64}@([a-z0-9-]+\.)+[a-z]{2,63}", ARCHIVE_SYNC_MAILBOX):
+        _sp.append("MC_ARCHIVE_SYNC_MAILBOX must be one plain address")
+    if not MAIL_ARCHIVE_ID:
+        _sp.append("MC_MAIL_ARCHIVE_ID must be set: the copy is made from the archive")
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 _-]{0,58}[A-Za-z0-9]|[A-Za-z0-9]", ARCHIVE_SYNC_LABEL_ROOT) or ARCHIVE_SYNC_LABEL_ROOT.lower() in ("inbox", "sent", "draft", "drafts", "spam", "trash", "unread", "starred", "important"):
+        _sp.append("MC_ARCHIVE_SYNC_LABEL_ROOT must be a label name of letters, digits, spaces, _ and -, and not a system label")
+    _oauth = (GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET, GOOGLE_OAUTH_REFRESH_TOKEN)
+    if bool(GOOGLE_SERVICE_ACCOUNT_FILE) == any(_oauth) or (any(_oauth) and not all(_oauth)):
+        _sp.append("give the Google credential as EITHER MC_GOOGLE_SERVICE_ACCOUNT_FILE OR all three of MC_GOOGLE_OAUTH_CLIENT_ID, _CLIENT_SECRET and _REFRESH_TOKEN")
+    if not 60 <= ARCHIVE_SYNC_INTERVAL <= 86400:
+        _sp.append("MC_ARCHIVE_SYNC_INTERVAL must be between 60 and 86400 seconds")
+    if _sp:
+        raise ImproperlyConfigured("The mailbox copy is enabled but not configured correctly: " + "; ".join(_sp) + ".")
+
 # --- Business rules (tunable, but defaults are deliberate) ------------------------
 BULK_SUPPRESSION_APPROVAL_THRESHOLD = 50
 try:

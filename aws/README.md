@@ -461,6 +461,68 @@ If you also use section 9, `permissions-boundary-extended.json` carries both add
 process. The **Setup check** gets a "Mail archive" group. A search of the archive takes a few seconds, so opening a message's text pauses
 briefly.
 
+## 11. Keep a permanent copy of archived mail in a Google Workspace mailbox (optional)
+
+Off by default. Section 10's archive keeps mail for at most its retention period and is read one message at a time. This adds a worker that
+copies every message that appears in the archive into a mailbox you already have, so you can search it like any other mail and keep it for
+as long as you keep the mailbox.
+
+```
+SES archive (section 10) --original message--> sync worker --Gmail API: insert only--> a Google Workspace mailbox
+```
+
+How it behaves:
+
+- **Nothing is sent.** The worker *inserts* each message (like IMAP APPEND): it keeps its original date, sender and recipients, skips spam
+  classification, and does not run the mailbox's filters. Each copy carries two labels and nothing else: `<root>` and `<root>/<Sender>` (for example
+  `Sent via SES/Cloud`). With no Inbox label a copy never appears in the Inbox, and with no Unread label it adds no unread count. Find copies under the
+  label, in All Mail, or by searching (`from:cloud@example.com`).
+- **Everything is kept, unredacted.** The mailbox holds the full original, including sign-in links and one-time codes. Treat it like a vault: use a
+  mailbox only you read, and set a Google Vault retention rule if you want to stop anyone deleting copies.
+- **Only mail that reaches the archive** (section 10) is copied, and only from when the archive was attached to a configuration set.
+- **The credential can only insert mail and manage labels.** It cannot read, search or delete anything in the mailbox.
+- **Safe to repeat.** A record per message (metadata only, never the content) stops anything being imported twice; failures are retried a limited number
+  of times; the newest hour is rescanned each pass; a busy moment is split by time and then by sender, and if it still cannot be completed the Setup check
+  and an alert say so.
+
+**11.1 The AWS permission.** The console role needs to fetch the original message from the archive. This is one more action in `archive-read.json`
+(`ses:GetArchiveMessage`): re-render with the archive options (section 10.4) and run the `put-role-policy` command again.
+
+**11.2 The Google credential**, for ONE mailbox. Choose A or B.
+
+*A. A service account with domain-wide delegation* (recommended)
+
+1. In the Google Cloud console, create or pick a project and enable the **Gmail API**.
+2. **IAM and admin, Service accounts**: create an account (no roles needed) and create a **JSON key** for it. Newer organisations block creating
+   service account keys by default (the policy `iam.disableServiceAccountKeyCreation`); an organisation admin can allow it for this one project.
+3. Copy the service account's numeric **Client ID** (shown in its details).
+4. In **Google Admin, Security, Access and data control, API controls, Manage domain-wide delegation**, add that Client ID with exactly these two scopes:
+   `https://www.googleapis.com/auth/gmail.insert,https://www.googleapis.com/auth/gmail.labels`
+5. Put the JSON key on the server as a read-only secret file (never in the repository, an image or a chat).
+
+*B. An OAuth refresh token* (if keys are blocked): create an OAuth client in the same project (an "internal" app), and sign in once **as the mailbox**
+to authorise the same two scopes, which gives a refresh token. Keep the client id, secret and token as secrets.
+
+**11.3 The worker.** Set these in the console's environment (it refuses to start if they are wrong):
+
+| Variable | Value |
+|---|---|
+| `MC_ARCHIVE_SYNC_MAILBOX` | the mailbox that receives the copies (setting this switches the feature on); `MC_MAIL_ARCHIVE_ID` must be set too |
+| `MC_GOOGLE_SERVICE_ACCOUNT_FILE` | path of the JSON key inside the container (option A) |
+| `MC_GOOGLE_OAUTH_CLIENT_ID`, `MC_GOOGLE_OAUTH_CLIENT_SECRET`, `MC_GOOGLE_OAUTH_REFRESH_TOKEN` | all three, instead of the file (option B) |
+| `MC_ARCHIVE_SYNC_LABEL_ROOT` | optional, default `Sent via SES`; not a system label name |
+| `MC_ARCHIVE_SYNC_INTERVAL` | optional seconds between passes, default 300 (60 to 86400) |
+
+Then run it as its own process, and run migrations first (a new table records what was copied):
+
+| Process | Command |
+|---|---|
+| Mailbox copy | `python manage.py sync_archive_to_mailbox` (always, restart on exit) |
+
+In a compose file, mount the key read-only into that container, for example `volumes: ["./secrets/google-key.json:/run/secrets/google-key.json:ro"]`, and point
+`MC_GOOGLE_SERVICE_ACCOUNT_FILE` at it. The **Setup check** gets a "Mailbox copy" group (does the credential work, is the sync running, did anything fail or
+stay incomplete), and alerts open if the sync stops or a message cannot be copied. The first pass copies everything already in the archive.
+
 ## Changing or removing things
 Remove the SES event destination before deleting the topic, and delete the subscription before the queue. Delete the
 roles in the reverse order of creation (write roles, then the app role, then the boundary policy). Do not delete the

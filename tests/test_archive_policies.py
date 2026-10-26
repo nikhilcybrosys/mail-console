@@ -44,7 +44,7 @@ def test_archive_options_are_validated_exactly(bad):
 
 def test_the_app_role_extra_policy_only_reads_one_archive_and_decrypts_with_one_key():
     pol = json.loads(rendered()["archive-read.json"])
-    assert allowed(pol) == {"ses:GetArchive", "ses:StartArchiveSearch", "ses:GetArchiveSearch", "ses:GetArchiveSearchResults",
+    assert allowed(pol) == {"ses:GetArchive", "ses:GetArchiveMessage", "ses:StartArchiveSearch", "ses:GetArchiveSearch", "ses:GetArchiveSearchResults",
                             "ses:GetArchiveMessageContent", "kms:Decrypt", "kms:GenerateDataKey", "kms:DescribeKey"}
     by_sid = {s["Sid"]: s for s in pol["Statement"]}
     assert by_sid["ReadTheMailArchive"]["Resource"] == ARCHIVE and by_sid["DecryptTheMailArchive"]["Resource"] == KEY
