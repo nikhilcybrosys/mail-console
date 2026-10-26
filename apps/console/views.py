@@ -314,14 +314,26 @@ def saved_view_delete(request, pk):
 
 def _text_source(msg):
     """Where the text of this message could come from: ("compose", SentMail) for mail written in Compose and still stored,
-    ("archive", None) for mail an SES archive holds a copy of and that is newer than MC_ARCHIVE_VIEW_DAYS, ("old", None) for archived mail
-    older than that, ("gone", sent) for Compose mail whose stored text has been blanked, or (None, None)."""
+    ("archive", None) for mail an SES archive holds a copy of and that is newer than the viewing window, ("old", None) for archived mail
+    older than that, ("blocked", None) when the message's mail category has reading switched off, ("gone", sent) for Compose mail whose
+    stored text has been blanked, or (None, None).
+
+    A mail category that has been set up (a MailCategory row named like the message's category) is followed: `store_body` off blocks reading,
+    `body_retention_days` shortens the window, and `redaction_rules` add to the redaction. Mail with no such row follows the global settings."""
     sent = SentMail.objects.filter(ses_message_id=msg.ses_message_id).first()
     if sent and sent.body:
         return "compose", sent
     if settings.MAIL_ARCHIVE_ID:
-        return ("archive" if msg.sent_at >= timezone.now() - timedelta(days=settings.ARCHIVE_VIEW_DAYS) else "old"), None
+        category = _category(msg)
+        if category is not None and not category.store_body:
+            return "blocked", None
+        days = min(settings.ARCHIVE_VIEW_DAYS, category.body_retention_days) if category is not None else settings.ARCHIVE_VIEW_DAYS
+        return ("archive" if msg.sent_at >= timezone.now() - timedelta(days=days) else "old"), None
     return ("gone" if sent else None), sent
+
+
+def _category(msg):
+    return MailCategory.objects.filter(name=msg.mail_category).first() if msg.mail_category else None
 
 
 def _message_context(request, pk):
@@ -337,7 +349,7 @@ def _message_context(request, pk):
         "can_sent_body": source in ("compose", "archive") and has_capability(request.user, "reveal_sent_body"),
         "m": msg, "timeline": timeline, "recipients": recipients,
         "can_body": bool(msg.body_ref) and has_capability(request.user, "reveal_body"),
-        "category": MailCategory.objects.filter(name=msg.mail_category).first(),
+        "category": _category(msg),
         "suppressed": {s.address_lower: s for s in SuppressionEntry.objects.filter(address_lower__in=[r.address_lower for r in recipients])},
     }
 
@@ -405,7 +417,8 @@ def sent_body(request, pk):
         try:
             reader = archive.Reader()
             row = reader.find(msg.ses_message_id, msg.sent_at, msg.recipients.values_list("address", flat=True).first())
-            text, note = archive.readable(reader.content(row["ArchivedMessageId"]))
+            category = _category(msg)
+            text, note = archive.readable(reader.content(row["ArchivedMessageId"]), category.redaction_rules if category is not None else ())
         except archive.ArchiveError as exc:
             record("sent_body.unavailable", target=f"message#{msg.pk}", request=request, details={"source": "archive", "why": type(exc).__name__})
             return render(request, "console/sent_body_ask.html", {**ask, "error": str(exc)})

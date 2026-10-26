@@ -49,6 +49,8 @@
     <div><a class="btn btn-primary" href="{% url 'sent_body' m.pk %}">{% trans "Open the message text" %}</a></div>
   {% elif text_source == "compose" or text_source == "archive" %}
     {% include "components/_empty.html" with icon="lock" title=_("The text of this message is stored") text=_("Only deliverability and security admins can open it.") %}
+  {% elif text_source == "blocked" %}
+    {% include "components/_empty.html" with icon="lock" title=_("Reading the text of this kind of mail is switched off") text=_("The mail category of this message does not allow its text to be shown. An admin can change that on the category.") %}
   {% elif text_source == "old" %}
     {% include "components/_empty.html" with icon="lock" title=_("This message is older than the console shows") text=_("Archived mail is shown for a limited number of days after it was sent. The record of what happened to it stays.") %}
   {% elif text_source == "gone" %}

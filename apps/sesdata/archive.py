@@ -132,19 +132,25 @@ def html_to_text(html):
     return re.sub(r"\n{3,}", "\n\n", text).strip()
 
 
-_QUERY = re.compile(r"(https?://[^\s<>\"']+?)\?[^\s<>\"']*")
-_OPAQUE = re.compile(r"(?<=/)[A-Za-z0-9_~-]{24,}(?=[/\s<>\"']|$)")
+_QUERY = re.compile(r"(https?://[^\s<>\"'?#]+)\?[^\s<>\"']*", re.I)
+_FRAGMENT = re.compile(r"(https?://[^\s<>\"'#]+)#[^\s<>\"']*", re.I)
+# A long unbroken run in a link's path (not the host): tokens, ids and signed names. The character before the run must be a single "/".
+_OPAQUE = re.compile(r"(?<=[^/]/)[A-Za-z0-9_~.-]{24,}(?=[/\s<>\"'?#]|$)")
+_JWT = re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]*")
 
 
-def redact_for_display(text):
-    """The shared secret redaction, plus: every link's query string and any long opaque path segment is masked. Mail from other
-    applications routinely carries sign-in, invitation and reset links, and the console has no way to tell which are sensitive."""
-    text = redact_text(text)
+def redact_for_display(text, extra_rules=()):
+    """The shared secret redaction, plus: every link's query string and fragment, any long opaque path segment and any JWT is masked.
+    Mail from other applications routinely carries sign-in, invitation and reset links, and the console has no way to tell which are
+    sensitive. `extra_rules` are the regular expressions of the message's mail category, if it has any (invalid ones are ignored)."""
+    text = redact_text(text, extra_rules)
     text = _QUERY.sub(r"\1?[redacted]", text)
+    text = _FRAGMENT.sub(r"\1#[redacted]", text)
+    text = _JWT.sub("[redacted]", text)
     return _OPAQUE.sub("[redacted]", text)
 
 
-def readable(content):
+def readable(content, extra_rules=()):
     """-> (text, note). The plain-text part if the message has one, otherwise the HTML turned into text; always redacted."""
     text = content["text"] or html_to_text(content["html"])
     note = ""
@@ -152,4 +158,4 @@ def readable(content):
         note = "AWS marked this message as malformed, so parts of it may be missing."
     if len(text) > MAX_TEXT:
         text, note = text[:MAX_TEXT], (note + " " if note else "") + f"The text was cut after {MAX_TEXT:,} characters."
-    return redact_for_display(text), note
+    return redact_for_display(text, extra_rules), note

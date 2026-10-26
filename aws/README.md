@@ -408,6 +408,10 @@ What to know before you switch it on:
   limits what the console shows, not what AWS stores. Anyone with permission to read the archive in AWS can read all of it.
 - **The console redacts what it shows:** HTML is turned into plain text (link targets are dropped), query strings and long opaque path segments
   in links are masked, and one-time codes and keys are masked. Redaction is best-effort: it removes what it recognises.
+- **Mail categories can restrict it.** A message belongs to a mail category (from its `mc-category` tag, or its configuration set). If a `MailCategory` row
+  with that name exists, the console follows it: `store_body` off blocks reading the text, `body_retention_days` can shorten the window below
+  `MC_ARCHIVE_VIEW_DAYS` (never extend it), and `redaction_rules` (regular expressions) add to the redaction. Messages with no such row follow the
+  global settings. There is no screen for categories yet; create the rows with `manage.py shell`.
 - **Encrypt the archive with its own KMS key** and keep the key policy narrow (below). Nothing from the archive is stored in the console's
   database.
 - **Which mail is copied:** SES documents archiving for mail sent through the `SendEmail` and `SendBulkEmail` API operations. Check that mail sent
