@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.urls import reverse
 
+from .branding import current
 from .rbac import has_capability
 
 
@@ -38,6 +39,8 @@ def _nav(request, u):
         gov.append(item("users", "Users and roles", "users"))
     if has_capability(u, "view_setup"):
         gov.append(item("setup_check", "Setup check", "circle-check"))
+    if has_capability(u, "manage_branding"):
+        gov.append(item("appearance", "Appearance", "palette", ("appearance_preview",)))
     if gov:
         groups.append({"label": "Governance", "items": gov})
     return groups
@@ -46,8 +49,9 @@ def _nav(request, u):
 def console_context(request):
     u = getattr(request, "user", None)
     authed = bool(u and u.is_authenticated)
+    brand = current(request)
     ctx = {
-        "brand_name": settings.BRAND_NAME, "brand_logo": settings.BRAND_LOGO, "brand_logo_dark": settings.BRAND_LOGO_DARK,
+        "brand": brand, "brand_name": brand["name"],
         "oidc_provider": settings.OIDC_PROVIDER_NAME, "csp_nonce": getattr(request, "csp_nonce", ""),
         "aws_regions": settings.AWS_REGIONS,
         "current_region": request.session.get("region", settings.AWS_REGIONS[0]) if hasattr(request, "session") else settings.AWS_REGIONS[0],

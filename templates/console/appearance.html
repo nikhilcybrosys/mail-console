@@ -1,0 +1,48 @@
+{% extends "base.html" %}{% load i18n ui static %}
+{% block title %}{% trans "Appearance" %}{% endblock %}
+{% block crumbs %}<span aria-current="page">{% trans "Appearance" %}</span>{% endblock %}
+{% block content %}
+<div class="ph"><div><h1>{% trans "Appearance" %}</h1><p>{% trans "Give the console your own look. Changes apply to everyone, including the sign-in page. Saving needs your passkey and is recorded in the audit log." %}</p></div></div>
+<div class="grid-main">
+<form id="appearance-form" class="stack" method="post" action="{% url 'appearance' %}" enctype="multipart/form-data"
+      hx-post="{% url 'appearance_preview' %}" hx-trigger="change, input delay:500ms" hx-target="#preview" hx-swap="innerHTML" hx-encoding="multipart/form-data">{% csrf_token %}
+  {% if errors %}<div class="callout callout-err" role="alert">{% icon "circle-alert" %}<div><div class="callout-title">{% trans "Nothing was saved" %}</div><ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul></div></div>{% endif %}
+  <section class="card" aria-labelledby="id-h"><div class="card-head"><div class="card-title" id="id-h">{% trans "Name and logo" %}</div></div>
+    <div class="card-body stack">
+      <div class="field"><label class="label" for="f-name">{% trans "Name" %}</label><input class="input" id="f-name" name="name" maxlength="40" value="{{ values.name }}" placeholder="{{ defaults.name }}" autocomplete="off"><span class="help">{% trans "Shown in the sidebar, the browser tab and the sign-in page. Leave empty for the default." %}</span></div>
+      {% for i in images %}
+      <div class="field"><label class="label" for="f-{{ i.kind }}">{{ i.label }} <span class="muted">({{ i.formats }}, {% blocktrans with kb=max_kb %}up to {{ kb }} KB{% endblocktrans %})</span></label>
+        <input class="input" id="f-{{ i.kind }}" name="{{ i.kind }}" type="file" accept="{% if i.kind == 'favicon' %}image/png,image/svg+xml,.ico{% else %}image/png,image/svg+xml{% endif %}">
+        {% if i.set %}<label class="check"><input type="checkbox" name="remove_{{ i.kind }}" value="1"> {% trans "Remove the uploaded file and use the default" %}</label>{% endif %}
+        {% if i.kind == 'logo_dark' %}<span class="help">{% trans "Optional. Without it the logo above is used in the dark theme too." %}</span>{% endif %}
+      </div>
+      {% endfor %}
+      <p class="help">{% blocktrans with px=max_px %}Images can be at most {{ px }} by {{ px }} pixels. An SVG must be a plain export of shapes and paths: scripts, links, text and editor extras are refused.{% endblocktrans %}</p>
+    </div></section>
+  <section class="card" aria-labelledby="col-h"><div class="card-head"><div class="card-title" id="col-h">{% trans "Colour and defaults" %}</div></div>
+    <div class="card-body stack">
+      <div class="field"><label class="label" for="accent">{% trans "Accent colour" %}</label>
+        <div class="accent-row"><input class="accent-pick" id="accent-picker" type="color" value="{% if values.accent %}{{ values.accent }}{% else %}{{ defaults.accent }}{% endif %}" aria-label="{% trans 'Pick a colour' %}"><input class="input" id="accent" name="accent" maxlength="7" value="{{ values.accent }}" placeholder="{{ defaults.accent }}" autocomplete="off" spellcheck="false"><button class="btn btn-sm" type="button" data-accent-clear>{% trans "Use the default" %}</button></div>
+        <span class="help">{% trans "Used for buttons and links. It must be dark enough for white button text to stay readable." %}</span></div>
+      <div class="field"><label class="label" for="f-theme">{% trans "Default theme" %}</label><select class="select" id="f-theme" name="default_theme">{% for v, l in themes %}<option value="{{ v }}" {% if values.default_theme == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select><span class="help">{% trans "People can still choose their own from the account menu." %}</span></div>
+      <div class="field"><label class="label" for="f-density">{% trans "Default table density" %}</label><select class="select" id="f-density" name="default_density">{% for v, l in densities %}<option value="{{ v }}" {% if values.default_density == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
+    </div></section>
+  <section class="card" aria-labelledby="txt-h"><div class="card-head"><div class="card-title" id="txt-h">{% trans "Sign-in page and footer" %}</div></div>
+    <div class="card-body stack">
+      <div class="field"><label class="label" for="f-login">{% trans "Sign-in welcome line" %}</label><input class="input" id="f-login" name="login_text" maxlength="160" value="{{ values.login_text }}" autocomplete="off"><span class="help">{% trans "Shown beside the sign-in form. Leave empty for the default." %}</span></div>
+      <div class="field"><label class="label" for="f-footer">{% trans "Footer line" %}</label><input class="input" id="f-footer" name="footer_text" maxlength="200" value="{{ values.footer_text }}" autocomplete="off"><span class="help">{% trans "Shown at the bottom of the sign-in page and every console page. It is not added to mail you send." %}</span></div>
+    </div></section>
+  <div class="row"><button class="btn btn-primary" type="submit">{% trans "Save appearance" %}</button></div>
+</form>
+<div class="stack">
+  <section class="card" aria-labelledby="pv-h"><div class="card-head"><div class="card-title" id="pv-h">{% trans "Preview" %}</div></div>
+    <div class="card-body" id="preview" aria-live="polite">{% include "console/_appearance_preview.html" with p=preview errors=None %}</div></section>
+  <section class="card" aria-labelledby="rs-h"><div class="card-head"><div class="card-title" id="rs-h">{% trans "Back to the defaults" %}</div></div>
+    <form class="card-body stack" method="post" action="{% url 'appearance_reset' %}" data-confirm="{% trans 'This removes your name, images, colour, texts and defaults for everyone.' %}" data-confirm-label="{% trans 'Reset' %}">{% csrf_token %}
+      <p class="help">{% trans "Removes every customisation and restores the original look." %}</p>
+      <div><button class="btn" type="submit" {% if not customised %}disabled{% endif %}>{% trans "Reset to default" %}</button></div>
+    </form></section>
+</div>
+</div>
+{% endblock %}
+{% block page_js %}<script src="{% static 'js/appearance.js' %}" defer></script>{% endblock %}

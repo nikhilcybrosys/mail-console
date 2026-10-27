@@ -5,6 +5,10 @@ Legend: **verified** = exercised against a real AWS account (one production acco
 never run for real.
 
 ## What works
+- **Appearance settings (built 2026-10-27, tested, not yet deployed):** *Settings > Appearance* (capability `manage_branding`, security admin, passkey,
+  audited as `branding.updated` / `branding.reset`) sets name, logo, dark logo, favicon, accent, default theme and density, sign-in line and
+  footer. Images live in the database (`BrandImage`), are checked by content (SVG by a strict allow-list, refused rather than edited) and are
+  served from `/brand/*`; `theme.css` derives the accent's tints for both themes. Mutation-checked; verified in a real browser with no CSP errors.
 - **Event pipeline (verified):** SES publishes to an SNS topic, an SQS queue (with a dead-letter queue) feeds a worker that
   parses events idempotently with an order-independent delivery state machine, a fail-closed topic allow-list and
   plain-English bounce explanations. Real events from a real account flow end to end. Running it against real AWS found three

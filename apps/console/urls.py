@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import views
+from . import appearance, views
 
 urlpatterns = [
     path("", views.dashboard, name="dashboard"),
@@ -27,6 +27,9 @@ urlpatterns = [
     path("audit/", views.audit_view, name="audit"),
     path("setup/", views.setup_check, name="setup_check"),
     path("setup/test-write-roles/", views.setup_test_write_roles, name="setup_test_write_roles"),
+    path("settings/appearance/", appearance.appearance, name="appearance"),
+    path("settings/appearance/preview/", appearance.appearance_preview, name="appearance_preview"),
+    path("settings/appearance/reset/", appearance.appearance_reset, name="appearance_reset"),
     path("users/", views.users_view, name="users"),
     path("users/add/", views.user_add, name="user_add"),
     path("users/<int:pk>/", views.user_update, name="user_update"),

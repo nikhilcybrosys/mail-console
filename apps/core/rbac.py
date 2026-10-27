@@ -35,6 +35,7 @@ CAPABILITIES = {
     "dmarc_upload": {DELIVERABILITY_ADMIN, SECURITY_ADMIN},
     "manage_templates": {SECURITY_ADMIN},
     "manage_users": {SECURITY_ADMIN},
+    "manage_branding": {SECURITY_ADMIN},
     "approve": {DELIVERABILITY_ADMIN, SECURITY_ADMIN},
     "break_glass": {SECURITY_ADMIN},
 }

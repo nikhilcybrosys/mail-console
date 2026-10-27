@@ -34,5 +34,5 @@ a dependency.
 ## Brand assets
 
 `static/brand/mark.svg` and `mark-white.svg` are an original placeholder mark released under the same licence as
-the code (Apache-2.0). Replace the name, logo and accent colour with your own using `MC_BRAND_NAME`,
+the code (Apache-2.0). Replace the name, logo and accent colour with your own in *Settings > Appearance*, or with `MC_BRAND_NAME`,
 `MC_BRAND_LOGO`, `MC_BRAND_LOGO_DARK` and `MC_BRAND_ACCENT` (see `config/settings.py`).

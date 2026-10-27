@@ -43,3 +43,17 @@
 
 /* the text of a message sent through Compose: shown as written, wrapped, never rendered */
 .sent-text{margin:0;white-space:pre-wrap;word-break:break-word;font:inherit;line-height:1.55;color:var(--text)}
+
+/* Settings > Appearance */
+.auth-foot{font-size:var(--fs-sm)}
+.preview{display:grid;gap:12px}
+.preview-panel{display:flex;align-items:center;gap:10px;padding:14px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface);color:var(--text);font-weight:600}
+.preview-panel img{width:26px;height:26px;object-fit:contain}
+.preview-dark{background:var(--inverse);color:var(--inverse-text);border-color:var(--inverse)}
+.preview-svg{display:block;max-width:100%;height:auto}
+.preview-svg text{font:600 13px var(--font)}
+.preview-note{font-size:var(--fs-sm);color:var(--muted)}
+.accent-row{display:flex;gap:8px;align-items:center}
+.accent-row .input{max-width:9rem;font-family:var(--mono)}
+.accent-pick{width:44px;height:var(--ctl);padding:2px;border:1px solid var(--border-strong);border-radius:var(--r-md);background:var(--surface);cursor:pointer}
+.check{display:flex;gap:8px;align-items:center;font-size:var(--fs-md)}

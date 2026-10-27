@@ -37,5 +37,5 @@ check. Run `docker compose up --build` to try the demo locally (see the README).
 - **No external requests:** fonts, icons and scripts are vendored under `static/`; nothing loads from a CDN.
 
 ## Branding
-The name, logo and accent colour are configurable with the `MC_BRAND_*` settings, so forks can rebrand without
-editing templates.
+The name, logo and accent colour are configurable in *Settings > Appearance* or with the `MC_BRAND_*` settings, so forks
+can rebrand without editing templates.
