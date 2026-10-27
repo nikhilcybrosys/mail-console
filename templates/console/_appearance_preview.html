@@ -1,0 +1,18 @@
+{% load i18n %}
+<div class="preview" aria-label="{% trans 'Preview' %}">
+  {% if errors %}<div class="callout callout-err" role="alert"><div><ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul></div></div>{% endif %}
+  <div class="preview-panel"><img src="{{ p.logo }}" alt="" width="26" height="26"><span>{{ p.name }}</span></div>
+  <div class="preview-panel preview-dark"><img src="{{ p.logo_dark }}" alt="" width="26" height="26"><span>{{ p.name }}</span></div>
+  <svg class="preview-svg" viewBox="0 0 300 96" width="300" height="96" role="img" aria-label="{% trans 'How buttons and links look in the light and dark themes' %}">
+    <rect x="0" y="0" width="300" height="44" rx="8" fill="{{ p.soft }}"/>
+    <rect x="10" y="6" width="110" height="32" rx="8" fill="{{ p.accent }}"/>
+    <text x="65" y="26" text-anchor="middle" fill="white">{% trans "Button" %}</text>
+    <text x="140" y="26" fill="{{ p.text }}">{% trans "Link text" %}</text>
+    <rect x="0" y="52" width="300" height="44" rx="8" fill="{{ p.dark_soft }}"/>
+    <rect x="10" y="58" width="110" height="32" rx="8" fill="{{ p.accent }}"/>
+    <text x="65" y="78" text-anchor="middle" fill="white">{% trans "Button" %}</text>
+    <text x="140" y="78" fill="{{ p.dark_text }}">{% trans "Link text" %}</text>
+  </svg>
+  {% if p.login_text %}<p class="preview-note">{% trans "Sign-in page:" %} {{ p.login_text }}</p>{% endif %}
+  {% if p.footer_text %}<p class="preview-note">{% trans "Footer:" %} {{ p.footer_text }}</p>{% endif %}
+</div>

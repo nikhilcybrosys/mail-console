@@ -202,8 +202,18 @@ console's estimate they include transient bounces:
     - alert: SesNotHealthy
       expr: mailconsole_ses_enforcement_healthy == 0 or mailconsole_ses_sending_enabled == 0
 
+## Appearance
+A security admin can give the console its own look under *Appearance* (passkey, audited; no approver, since nothing in AWS
+changes): product name, logo, a logo for the dark theme, favicon, accent colour, default theme and table density, a line
+beside the sign-in form and a footer line. A preview shows the result before saving, and *Reset to default* restores the
+original look. Uploads are PNG or SVG (a favicon may also be ICO), at most 512 KB and 1024 by 1024 pixels, stored in the
+database and checked by their content: an SVG is accepted only if it contains plain shapes and paths, with no script, link,
+text, image, filter, DOCTYPE or editor extras, and a refused file is never edited. The accent must keep white button text
+at 4.5:1. The `MC_BRAND_*` settings remain the defaults used wherever nothing has been set in the console. The footer shows on
+console pages only; mail you send is never changed.
+
 ## License
 Licensed under the [Apache License 2.0](LICENSE). Third-party components are listed in
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). The name, logo and accent colour are configurable with the
-`MC_BRAND_*` settings. Contributions are accepted under the same licence with a DCO sign-off (see
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). The name, logo and accent colour are configurable in
+*Settings > Appearance* or with the `MC_BRAND_*` settings. Contributions are accepted under the same licence with a DCO sign-off (see
 [CONTRIBUTING.md](CONTRIBUTING.md)).

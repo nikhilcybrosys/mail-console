@@ -80,3 +80,5 @@ dialog::backdrop{background:var(--overlay)}
 @media (max-width:960px){.btn.nav-open{display:inline-flex}}
 .region-select{width:auto;min-width:112px}
 .sb-foot .nav-item{width:100%;border:0;background:none;cursor:pointer}
+
+.page-foot{padding:14px var(--pad) 18px;font-size:var(--fs-sm);color:var(--muted);border-top:1px solid var(--border-soft)}

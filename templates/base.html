@@ -1,11 +1,12 @@
 {% load static i18n ui %}<!doctype html>
-<html lang="en" data-theme="light" data-density="compact">
+<html lang="en" data-theme="light" data-density="compact" data-default-theme="{{ brand.default_theme }}" data-default-density="{{ brand.default_density }}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
 <meta name="referrer" content="same-origin">
 <meta name="htmx-config" content='{"allowEval":false,"allowScriptTags":false,"selfRequestsOnly":true,"historyCacheSize":0,"includeIndicatorStyles":false,"refreshOnHistoryMiss":true}'>
+<link rel="icon" href="{{ brand.favicon }}">
 <title>{% block title %}{% trans "Overview" %}{% endblock %} · {{ brand_name }}</title>
 <script src="{% static 'js/theme.js' %}"></script>
 <link rel="preload" href="{% static 'fonts/Geist-Regular.woff2' %}" as="font" type="font/woff2" crossorigin>
@@ -15,7 +16,7 @@
 <link rel="stylesheet" href="{% static 'css/shell.css' %}">
 <link rel="stylesheet" href="{% static 'css/components.css' %}">
 <link rel="stylesheet" href="{% static 'css/pages.css' %}">
-<link rel="stylesheet" href="{% url 'theme_css' %}">
+<link rel="stylesheet" href="{% url 'theme_css' %}?v={{ brand.version }}">
 {% block head %}{% endblock %}
 </head>
 <body hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}' data-csrf="{{ csrf_token }}">
@@ -25,8 +26,8 @@
   <aside class="sidebar" aria-label="{% trans 'Primary' %}">
     <div class="sb-head">
       <a class="sb-brand" href="{% url 'dashboard' %}">
-        <img class="logo-light" src="{% static brand_logo %}" alt="" width="26" height="26">
-        <img class="logo-dark" src="{% static brand_logo_dark %}" alt="" width="26" height="26">
+        <img class="logo-light" src="{{ brand.logo }}" alt="" width="26" height="26">
+        <img class="logo-dark" src="{{ brand.logo_dark }}" alt="" width="26" height="26">
         <span>{{ brand_name }}</span>
       </a>
     </div>
@@ -77,6 +78,7 @@
       </div>
     </header>
     <main class="page {% block page_class %}{% endblock %}" id="main">{% block content %}{% endblock %}</main>
+    {% if brand.footer_text %}<footer class="page-foot">{{ brand.footer_text }}</footer>{% endif %}
   </div>
 </div>
 

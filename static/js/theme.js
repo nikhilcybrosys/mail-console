@@ -8,15 +8,15 @@
   var mq = window.matchMedia ? matchMedia("(prefers-color-scheme: dark)") : null;
   function resolve(pref) { return pref === "dark" || (pref !== "light" && mq && mq.matches) ? "dark" : "light"; }
   function applyTheme() {
-    var pref = ls.get("mc-theme") || "system";
+    var pref = ls.get("mc-theme") || root.getAttribute("data-default-theme") || "system";
     root.setAttribute("data-theme", resolve(pref));
     root.setAttribute("data-theme-pref", pref);
     document.dispatchEvent(new CustomEvent("mc:theme"));
   }
-  function applyDensity() { root.setAttribute("data-density", ls.get("mc-density") === "comfortable" ? "comfortable" : "compact"); }
+  function applyDensity() { root.setAttribute("data-density", (ls.get("mc-density") || root.getAttribute("data-default-density")) === "comfortable" ? "comfortable" : "compact"); }
   function applySidebar() { if (ls.get("mc-sidebar") === "collapsed") root.setAttribute("data-sidebar", "collapsed"); else root.removeAttribute("data-sidebar"); }
   applyTheme(); applyDensity(); applySidebar();
-  if (mq && mq.addEventListener) mq.addEventListener("change", function () { if ((ls.get("mc-theme") || "system") === "system") applyTheme(); });
+  if (mq && mq.addEventListener) mq.addEventListener("change", function () { if ((ls.get("mc-theme") || root.getAttribute("data-default-theme") || "system") === "system") applyTheme(); });
 
   document.addEventListener("click", function (e) {
     var t = e.target.closest("[data-theme-set]"), d = e.target.closest("[data-density-set]"), s = e.target.closest("[data-sidebar-toggle]"), n = e.target.closest("[data-nav-toggle]");

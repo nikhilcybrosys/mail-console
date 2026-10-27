@@ -111,7 +111,7 @@ def test_theme_css_empty_by_default_and_validates_accent(settings):
     assert c.get("/theme.css").content == b""
     settings.BRAND_ACCENT = "#1F4FBF"
     css = c.get("/theme.css").content.decode()
-    assert "--accent:#1F4FBF" in css and "--btn-primary-hover:" in css and css.count("{") == 1
+    assert "--accent:#1F4FBF" in css and "--btn-primary-hover:" in css and css.count("{") == 3
     for bad in ("red", "#12", "#1F4FBF;} body{display:none", "url(//evil)", "#FFFF00"):  # last: yellow fails 4.5:1 with white
         settings.BRAND_ACCENT = bad
         assert c.get("/theme.css").content == b"", bad
