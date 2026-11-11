@@ -1,13 +1,13 @@
 # syntax=docker/dockerfile:1
 # Two stages: dependencies are built in a throwaway stage, the runtime image has no compiler, no tests and no docs.
 
-FROM python:3.12-slim-bookworm AS build
+FROM python:3.15-slim-bookworm AS build
 ENV PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1
 WORKDIR /build
 COPY requirements.lock .
 RUN python -m venv /opt/venv && /opt/venv/bin/pip install --no-cache-dir --no-compile -r requirements.lock
 
-FROM python:3.12-slim-bookworm
+FROM python:3.15-slim-bookworm
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PATH="/opt/venv/bin:${PATH}"
 # Unprivileged user with no shell and no writable application directory.
 RUN groupadd --system --gid 10001 app \
