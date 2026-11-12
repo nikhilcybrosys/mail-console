@@ -15,7 +15,7 @@ classifiers = [
   "Topic :: System :: Systems Administration",
 ]
 dependencies = [
-  "Django>=5.2,<5.3", "psycopg[binary]>=3.2", "boto3", "nh3", "dnspython", "authlib", "fido2",
+  "Django>=5.2,<6.2", "psycopg[binary]>=3.2", "boto3", "nh3", "dnspython", "authlib", "fido2",
   "whitenoise", "gunicorn", "requests", "defusedxml",
 ]
 # Not installable as a package yet: the app is deployed from the repository (see README).
